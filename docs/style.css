@@ -1,0 +1,137 @@
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;touch-action:none;background:#2a1466;font-family:'Fredoka','Arial Rounded MT Bold',sans-serif;color:#fff}
+#app{position:fixed;inset:0;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));z-index:5}
+.screen.on{display:flex;animation:fadein .35s ease}
+@keyframes fadein{from{opacity:0;transform:scale(1.04)}to{opacity:1;transform:none}}
+.sky{background:radial-gradient(circle at 50% 30%,#7fd8ff,#3b7bff 60%,#5b2bd6)}
+.burst{background:repeating-conic-gradient(from 0deg at 50% 45%,#ff9a1f 0 10deg,#ffb84a 10deg 20deg);animation:none}
+.burst::before{content:'';position:absolute;inset:-50%;background:inherit;animation:spin 30s linear infinite;z-index:-1}
+.burst{overflow:hidden;isolation:isolate}
+.burst.gold{background:repeating-conic-gradient(from 0deg at 50% 45%,#ffd23f 0 10deg,#ffe98a 10deg 20deg)}
+#s-pick.burst,#s-intro.burst{background:repeating-conic-gradient(from 0deg at 50% 50%,#5b2bd6 0 10deg,#7a4af0 10deg 20deg)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.titlebg{position:absolute;inset:0;background:url(art/title.jpg) center top/cover;z-index:-1}
+.titlebtns{margin-top:auto;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px;background:rgba(40,10,110,.55);backdrop-filter:blur(6px);border:4px solid #fff;border-radius:28px;padding:14px;box-shadow:0 10px 0 rgba(0,0,0,.25)}
+.who{font-family:'Lilita One';font-size:22px;text-align:center;text-shadow:0 3px 0 #3a1580}
+.charpick{display:flex;gap:10px}
+.pick{flex:1;display:flex;align-items:center;gap:8px;background:#fff;color:#5b2bd6;border:4px solid #d9cfff;border-radius:20px;padding:4px 10px;font:700 20px 'Fredoka';transition:transform .15s}
+.pick img{height:64px}
+.pick.sel{border-color:#ffcc00;background:#fff6c9;transform:scale(1.05);box-shadow:0 0 0 4px #ff9a1f}
+button{cursor:pointer;font-family:'Lilita One',sans-serif}
+.big,.mid{border:none;border-radius:22px;color:#fff;font-size:26px;padding:14px 18px;letter-spacing:.5px;text-shadow:0 3px 0 rgba(0,0,0,.25);box-shadow:inset 0 -7px 0 rgba(0,0,0,.22),0 6px 0 rgba(0,0,0,.25);transition:transform .08s}
+.mid{font-size:19px;padding:10px 14px;border-radius:18px}
+.big:active,.mid:active,.pick:active{transform:translateY(4px) scale(.97);box-shadow:inset 0 -3px 0 rgba(0,0,0,.22),0 2px 0 rgba(0,0,0,.25)}
+.big:disabled{filter:grayscale(.7) brightness(.85)}
+.yellow{background:linear-gradient(#ffe14d,#ffae00);color:#7a3a00;text-shadow:0 2px 0 rgba(255,255,255,.5)}
+.blue{background:linear-gradient(#5ec8ff,#1f7bff)}
+.green{background:linear-gradient(#7cf06a,#25b33a)}
+.purple{background:linear-gradient(#b67bff,#7a3cf0)}
+.red{background:linear-gradient(#ff7a7a,#e8304a)}
+.ghost{background:rgba(255,255,255,.2);box-shadow:inset 0 -5px 0 rgba(0,0,0,.15)}
+.joinrow{display:flex;gap:8px}
+#i-code{flex:1;min-width:0;font:28px 'Lilita One';text-align:center;letter-spacing:8px;border-radius:20px;border:4px solid #d9cfff;color:#5b2bd6;text-transform:uppercase;user-select:text;-webkit-user-select:text}
+.err{color:#ffd0d0;text-align:center;min-height:1em;font-weight:700}
+.panel{background:rgba(255,255,255,.96);color:#45208f;border-radius:32px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 0 rgba(0,0,0,.2),0 0 0 6px #fff inset,0 0 0 10px #ffcc00 inset;max-height:100%;overflow:auto}
+.pop{animation:pop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+.lbl{text-align:center;font-weight:700;opacity:.8}
+.code{font:64px 'Lilita One';text-align:center;letter-spacing:12px;color:#ff7a00;text-shadow:0 4px 0 #ffd38a;line-height:1}
+.vs{display:flex;align-items:center;justify-content:space-around}
+.vstxt{font:40px 'Lilita One';color:#ff3d7f;transform:rotate(-8deg)}
+.slot{width:120px;height:150px;border-radius:24px;background:#efe9ff;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:6px;font:700 18px 'Fredoka';position:relative}
+.slot img{height:110px;animation:bob 1.2s ease-in-out infinite}
+.slot.empty{color:#a08bd8;justify-content:center;border:4px dashed #c9b8ff}
+.slot .me{position:absolute;top:-8px;right:-8px;background:#ff3d7f;color:#fff;border-radius:12px;padding:2px 8px;font-size:13px}
+.slot .off{position:absolute;top:40%;background:#333c;border-radius:10px;padding:2px 6px;font-size:12px;color:#fff}
+@keyframes bob{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-6px) scaleY(1.03)}}
+.seg{display:flex;gap:6px;justify-content:center}
+.seg button{flex:1;font-size:24px;border:none;border-radius:16px;padding:8px;background:#efe9ff;color:#7a4af0;box-shadow:inset 0 -5px 0 rgba(0,0,0,.1)}
+.seg button.sel{background:linear-gradient(#ffe14d,#ffae00);color:#7a3a00}
+.toggle{display:flex;align-items:center;gap:10px;justify-content:center;font-weight:700;font-size:18px}
+.toggle input{width:26px;height:26px;accent-color:#7a4af0}
+body.guest .hostonly{display:none}
+body:not(.guest) .guestonly{display:none}
+.intro{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.introchar{position:absolute;top:12%;display:flex;flex-direction:column;align-items:center;font:44px 'Lilita One';text-shadow:0 4px 0 #2a0f70}
+.introchar img{height:34vh;filter:drop-shadow(0 8px 0 rgba(0,0,0,.25))}
+.introchar.left{left:4%;animation:slideL .7s cubic-bezier(.3,1.5,.5,1) both}
+.introchar.right{right:4%;top:30%;animation:slideR .7s .5s cubic-bezier(.3,1.5,.5,1) both}
+@keyframes slideL{from{transform:translateX(-120vw)}}
+@keyframes slideR{from{transform:translateX(120vw)}}
+.introvs{font:110px 'Lilita One';color:#ffcc00;-webkit-text-stroke:4px #ff3d7f;position:absolute;top:28%;animation:pop .6s 1s both cubic-bezier(.3,1.8,.5,1)}
+.introhazel{position:absolute;bottom:4%;display:flex;flex-direction:column-reverse;align-items:center;animation:pop .6s 1.7s both cubic-bezier(.3,1.8,.5,1)}
+.introhazel img{height:26vh;animation:wag .4s ease-in-out infinite alternate}
+@keyframes wag{from{transform:rotate(-4deg)}to{transform:rotate(4deg) translateY(-6px)}}
+.bubble{background:#fff;color:#45208f;font:24px 'Lilita One';padding:10px 16px;border-radius:20px;position:relative;margin-bottom:8px;box-shadow:0 5px 0 rgba(0,0,0,.2)}
+.pickhdr{font:44px 'Lilita One';text-shadow:0 5px 0 #2a0f70;margin-bottom:16px}
+.wheel{width:100%;max-width:400px;height:200px;overflow:hidden;position:relative;border-radius:30px;border:6px solid #fff;background:#fff3;box-shadow:0 8px 0 rgba(0,0,0,.25)}
+.wheel::after{content:'';position:absolute;left:50%;top:-4px;margin-left:-14px;border:14px solid transparent;border-top:20px solid #ffcc00}
+.strip{position:absolute;top:10px;left:0;display:flex;gap:12px;padding-left:50%;will-change:transform}
+.gcard{width:150px;height:170px;flex:none;border-radius:24px;background:#fff;color:#45208f;display:flex;flex-direction:column;align-items:center;justify-content:center;font:20px 'Lilita One';text-align:center;box-shadow:inset 0 -8px 0 rgba(0,0,0,.1)}
+.gcard .ic{font-size:64px;line-height:1.2}
+.pickname{font:40px 'Lilita One';margin-top:18px;text-shadow:0 4px 0 #2a0f70;min-height:50px}
+.card .tuticon{font-size:70px;text-align:center;line-height:1;animation:bob 1s infinite}
+.tutname{font:36px 'Lilita One';text-align:center;color:#ff7a00}
+.tutlist{margin:0;padding-left:22px;font-size:19px;line-height:1.35;font-weight:500}
+.tutlist li{margin:4px 0}
+.readyrow{display:flex;justify-content:center;gap:20px}
+.readyrow .rp{display:flex;flex-direction:column;align-items:center;font-weight:700;opacity:.4;transition:all .3s}
+.readyrow .rp img{height:60px}
+.readyrow .rp.ok{opacity:1;transform:scale(1.1)}
+.readyrow .rp.ok::after{content:'✔ READY';color:#25b33a}
+#hud{position:absolute;left:0;right:0;top:0;display:none;justify-content:space-between;align-items:flex-start;padding:max(8px,env(safe-area-inset-top)) 8px 0;z-index:4;pointer-events:none}
+#hud.on{display:flex}
+.hp{display:flex;align-items:center;gap:6px;background:linear-gradient(#ffffff,#e9e2ff);color:#45208f;border-radius:22px;padding:3px 12px 3px 3px;box-shadow:0 4px 0 rgba(0,0,0,.25);border:3px solid #ff3d7f}
+.hp.r{flex-direction:row-reverse;padding:3px 3px 3px 12px;border-color:#1f9bff}
+.hp img{height:46px;width:46px;object-fit:cover;object-position:top;border-radius:50%;background:#ffe9a8}
+.hp div{display:flex;flex-direction:column;line-height:1}
+.hp b{font:16px 'Fredoka';font-weight:700}
+.hp i{font:28px 'Lilita One';font-style:normal}
+.hp.bump{animation:hbump .35s}
+@keyframes hbump{50%{transform:scale(1.25)}}
+.htimer{font:34px 'Lilita One';background:#ffcc00;color:#7a3a00;border-radius:20px;padding:2px 14px;box-shadow:0 4px 0 rgba(0,0,0,.25);min-width:64px;text-align:center}
+.htimer.hot{background:#ff3d3d;color:#fff;animation:hbump .5s infinite}
+.htimer:empty{display:none}
+#controls{position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;gap:12px;padding:0 12px max(14px,env(safe-area-inset-bottom));pointer-events:none}
+#controls button{pointer-events:auto;flex:1;height:110px;font-size:34px;border-radius:30px}
+#banner{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:6;font:28px 'Lilita One';background:#000a;padding:14px 20px;border-radius:20px;display:none;text-align:center}
+#banner.on{display:block}
+#countdown{position:absolute;inset:0;z-index:7;display:none;align-items:center;justify-content:center;font:160px 'Lilita One';color:#ffcc00;-webkit-text-stroke:6px #ff3d7f;text-shadow:0 10px 0 rgba(0,0,0,.3);pointer-events:none;background:rgba(40,10,110,.35)}
+#countdown.on{display:flex}
+#countdown span{animation:cd .9s cubic-bezier(.3,1.8,.5,1) both}
+@keyframes cd{0%{transform:scale(3);opacity:0}30%{transform:scale(1);opacity:1}80%{transform:scale(1)}100%{transform:scale(.6);opacity:0}}
+.restitle{font:44px 'Lilita One';text-align:center;text-shadow:0 5px 0 #a33c00;animation:pop .5s both;z-index:1}
+.reswinner{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin:10px 0;z-index:1}
+.reswinner img{height:28vh;animation:jump .6s ease-in-out infinite alternate;filter:drop-shadow(0 8px 0 rgba(0,0,0,.25))}
+.reswinner img.sad{height:16vh;animation:none;filter:grayscale(.5) drop-shadow(0 4px 0 rgba(0,0,0,.2));transform:rotate(8deg)}
+.reswinner.big img{height:32vh}
+@keyframes jump{from{transform:translateY(0) scale(1.05,.95)}to{transform:translateY(-24px) scale(.97,1.04)}}
+.board{background:#fff;color:#45208f;border-radius:26px;padding:12px 16px;width:100%;max-width:400px;box-shadow:0 8px 0 rgba(0,0,0,.2);z-index:1}
+.brow{display:flex;align-items:center;gap:8px;margin:6px 0;font:22px 'Lilita One'}
+.brow img{height:44px;width:44px;object-fit:cover;object-position:top;border-radius:50%;background:#ffe9a8}
+.brow .stars{flex:1;display:flex;flex-wrap:wrap;gap:2px;font-size:22px}
+.brow .stars .e{opacity:.2;filter:grayscale(1)}
+.brow .stars .n{animation:pop .6s .4s both cubic-bezier(.3,2,.5,1)}
+.crown{font-size:70px;animation:bob 1s infinite;z-index:1}
+#b-rematch{margin-top:14px;z-index:1}
+.roundbtn{position:absolute;right:10px;bottom:max(10px,env(safe-area-inset-bottom));z-index:9;width:48px;height:48px;border-radius:50%;border:3px solid #fff;background:#5b2bd6aa;font-size:22px;color:#fff}
+body.playing .roundbtn{top:max(74px,calc(env(safe-area-inset-top) + 66px));bottom:auto;left:50%;right:auto;margin-left:-20px;width:40px;height:40px;font-size:18px}
+#fxlayer{position:absolute;inset:0;pointer-events:none;z-index:8;overflow:hidden}
+.conf{position:absolute;top:-20px;width:10px;height:16px;border-radius:3px;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+.toast{position:absolute;font:30px 'Lilita One';-webkit-text-stroke:2px #45208f;animation:rise 1s ease-out forwards;transform:translate(-50%,-50%)}
+@keyframes rise{to{transform:translate(-50%,-180%) scale(1.3);opacity:0}}
+.shake{animation:shake .3s}
+@keyframes shake{20%{transform:translate(-6px,3px)}40%{transform:translate(5px,-4px)}60%{transform:translate(-4px,-2px)}80%{transform:translate(3px,4px)}}
+.flash{position:absolute;inset:0;background:#fff;animation:flash .3s forwards;pointer-events:none}
+@keyframes flash{to{opacity:0}}
+.panel .ghost{background:#efe9ff;color:#7a4af0;text-shadow:none}
+.brow .stars{font-size:clamp(12px,4.2vw,20px);gap:0;flex-wrap:nowrap}
+.restitle{-webkit-text-stroke:2px #a33c00;paint-order:stroke fill;padding:0 8px}
+
+.srvmsg{color:#fff;text-align:center;font-weight:700;font-size:14px;line-height:1.3}
+.srvmsg:empty{display:none}
+body.noserver #b-create,body.noserver .joinrow{display:none}
+body.botmode #b-share{display:none}
