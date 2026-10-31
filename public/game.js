@@ -54,7 +54,7 @@ if (urlCode) $('#i-code').value = urlCode.toUpperCase();
 $('#b-create').onclick = () => { SFX.init(); SFX.play('tap'); if (!online) return err('Online play needs the server'); sock.emit('create', { char: myChar, token }); };
 $('#b-join').onclick = () => { SFX.init(); SFX.play('tap'); const c = $('#i-code').value.trim().toUpperCase(); if (!online) return err('Online play needs the server'); if (c.length < 4) return err('Enter the 4-letter code'); sock.emit('join', { code: c, token }); };
 $('#b-bot').onclick = () => { SFX.init(); SFX.play('tap'); startBot(); };
-$('#i-code').addEventListener('keydown', e => { if (e.key === 'Enter') $('#b-join').click(); });
+$('#i-code').addEventListener('keydown', e => { if (room && room.phase === 'play' && room.game === 'chess') { if (e.code === 'ArrowLeft') chessNav(-1); if (e.code === 'ArrowRight') chessNav(1); if (e.code === 'Home') chessNav('first'); if (e.code === 'End') chessNav('live'); } if (e.key === 'Enter') $('#b-join').click(); });
 function err(m) { $('#t-err').textContent = m; SFX.play('bad'); }
 $('#b-share').onclick = async () => {
   SFX.play('tap'); const url = `${location.origin}${location.pathname}?r=${room.code}`;
@@ -268,14 +268,14 @@ function updateHud() {
   const t = $('#htimer'); let tt = '';
   if (gs && gs.t !== undefined) tt = Math.max(0, Math.ceil(gs.t));
   if (room.game === 'fetch' && gs) tt = `🎾 to 5`;
-  if (room.game === 'snow' && gs) tt = `☃️ to 2`;
+  if (room.game === 'snow' && gs) tt = `☃️×2`;
   if (room.game === 'chess' && gs) tt = gs.end !== null ? '🏁' : ((gs.turn === 'w') === (gs.white === me) ? 'Your move' : 'Waiting…');
   if (t.textContent !== String(tt)) { t.textContent = tt; if (typeof tt === 'number' && tt <= 5 && tt > 0) SFX.play('tick'); }
   t.classList.toggle('hot', typeof tt === 'number' && tt <= 5);
 }
 
 // ---------- controls ----------
-let ctl = { game: null }, joy = null, chessSel = null;
+let ctl = { game: null }, joy = null, chessSel = null, chessHist = [], chessView = null, chessNew = false;
 function setControls(html) { $('#controls').innerHTML = html || ''; }
 function send(m) { sock.emit('in', m); }
 function setupControls(g) {
@@ -289,7 +289,10 @@ function setupControls(g) {
     setControls(`<button class="big blue" id="c-shove" style="flex:0 0 42%;margin-left:auto">💨 SHOVE</button>`);
     $('#c-shove').addEventListener('pointerdown', e => { e.preventDefault(); send({ t: 'dash' }); });
   } else if (g === 'chess') {
-    setControls(`<button class="mid red" id="c-resign" style="flex:0 0 auto;height:auto;margin-left:auto;font-size:16px">🏳️ Resign</button>`);
+    chessHist = []; chessView = null; chessNew = false;
+    const nb = (id, t) => `<button class="mid" id="${id}" style="flex:1 1 0;min-width:0;height:auto;padding:10px 0;font-size:22px;color:#45208f;font-weight:bold">${t}</button>`;
+    setControls(`<div style="display:flex;gap:6px;flex:1 1 auto">${nb('c-first', '⏮')}${nb('c-prev', '◀')}${nb('c-next', '▶')}${nb('c-live', '⏭')}</div><button class="mid red" id="c-resign" style="flex:0 0 auto;height:auto;margin-left:8px;font-size:16px">🏳️</button>`);
+    $('#c-first').onclick = () => chessNav('first'); $('#c-prev').onclick = () => chessNav(-1); $('#c-next').onclick = () => chessNav(1); $('#c-live').onclick = () => chessNav('live');
     $('#c-resign').onclick = () => { if (confirm('Resign this chess game?')) send({ t: 'resign' }); };
   } else setControls(null);
 }
@@ -300,7 +303,7 @@ cv.addEventListener('pointerdown', e => {
   if (g === 'treat') { send({ t: 'x', x: w.x }); ctl.drag = true; }
   if (g === 'fetch') { if (!gs.th[me] && gs.ph === 'aim') { const p = fetchRet(me); send({ t: 'throw', x: p.x, y: p.y }); } }
   if (g === 'snack' || g === 'snow') { joy = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId }; }
-  if (g === 'chess') chessTap(e.clientX, e.clientY);
+  if (g === 'chess') { if (chessView !== null) { SFX.play('tap'); chessBanner = 1.2; } else chessTap(e.clientX, e.clientY); }
 });
 cv.addEventListener('pointermove', e => {
   if (!room || room.phase !== 'play') return; const g = room.game;
@@ -424,13 +427,32 @@ function chessTap(px, py) {
   if (chessSel && gs.legal[chessSel] && gs.legal[chessSel].includes(sq)) { send({ t: 'move', from: chessSel, to: sq }); chessSel = null; return; }
   if (myTurn && gs.legal[sq]) { chessSel = sq; SFX.play('tap'); buzz(8); } else chessSel = null;
 }
-let chessAnim = null, chessLastKey = '';
+let chessAnim = null, chessLastKey = '', chessBanner = 0;
+function chessSync() {
+  if (!gs || !gs.h) return; if (gs.hn < chessHist.length) { chessHist = []; chessView = null; }
+  const b = gs.hn - gs.h.length; gs.h.forEach((e, i) => { chessHist[b + i] = e; });
+  if (chessView !== null && chessSync.hn && gs.hn > chessSync.hn) chessNew = true; chessSync.hn = gs.hn;
+  if (chessView === null) chessNew = false;
+}
+function chessNav(d) {
+  if (!gs || !gs.hn) return; const live = gs.hn - 1; let v = chessView === null ? live : chessView;
+  if (d === 'live') v = live; else if (d === 'first') v = 0; else v = Math.max(0, Math.min(live, v + d));
+  if (v < live && !chessHist[v]) return;
+  chessView = v >= live ? null : v; if (chessView === null) chessNew = false; chessSel = null; SFX.play('tap'); buzz(6); chessBtns();
+}
+function chessBtns() {
+  const live = gs ? gs.hn - 1 : 0, v = chessView === null ? live : chessView, set = (id, dis) => { const b = $('#' + id); if (b) { b.disabled = dis; b.style.opacity = dis ? 0.4 : 1; } };
+  set('c-first', v <= 0); set('c-prev', v <= 0); set('c-next', v >= live); set('c-live', v >= live);
+  const lb = $('#c-live'); if (lb) { lb.innerHTML = chessView !== null ? '<span style="font-size:13px;color:#ff4d4d">●</span> LIVE' : '⏭'; lb.style.background = chessView !== null ? '#ffcc33' : ''; lb.style.color = chessView !== null ? '#45208f' : ''; }
+}
 function drawChess(dt, T) {
   const gr = cx.createLinearGradient(0, 0, 0, VH); gr.addColorStop(0, '#8a5cff'); gr.addColorStop(1, '#2e1470'); cx.fillStyle = gr; cx.fillRect(0, 0, VW, VH);
   // soft polka dots
   cx.fillStyle = 'rgba(255,255,255,.06)'; for (let y = 0; y < VH; y += 46) for (let x = (y / 46 % 2) * 23; x < VW; x += 46) { cx.beginPath(); cx.arc(x, y, 7, 0, 7); cx.fill(); }
   if (!gs || !gs.fen) return;
-  const g = chessGeom(), flip = gs.white !== me, rows = gs.fen.split(' ')[0].split('/'), c = g.c;
+  chessSync(); chessBtns(); const rev = chessView !== null && chessHist[chessView], HV = rev ? chessHist[chessView] : null;
+  const L = rev ? (HV[1] ? [HV[1], HV[2]] : null) : gs.last, NK = rev ? chessView : gs.n;
+  const g = chessGeom(), flip = gs.white !== me, rows = (rev ? HV[0] : gs.fen.split(' ')[0]).split('/'), c = g.c;
   // frame: wood with gold trim
   cx.save(); cx.shadowColor = 'rgba(0,0,0,.45)'; cx.shadowBlur = 24; cx.shadowOffsetY = 10;
   const fw = Math.max(14, c * 0.42); const wg = cx.createLinearGradient(0, g.y0 - fw, 0, g.y0 + g.sz + fw); wg.addColorStop(0, '#8b4a1f'); wg.addColorStop(0.5, '#6b3413'); wg.addColorStop(1, '#4a220a');
@@ -438,18 +460,18 @@ function drawChess(dt, T) {
   cx.lineWidth = 3; cx.strokeStyle = '#ffcc33'; rr(g.x0 - fw + 4, g.y0 - fw + 4, g.sz + fw * 2 - 8, g.sz + fw * 2 - 8, fw * 0.7); cx.stroke();
   cx.fillStyle = '#2a1206'; cx.fillRect(g.x0 - 2, g.y0 - 2, g.sz + 4, g.sz + 4);
   const bd = {}; rows.forEach((row, r) => { let f = 0; for (const ch of row) { if (/\d/.test(ch)) f += +ch; else { bd['abcdefgh'[f] + (8 - r)] = ch; f++; } } });
-  const kingSq = gs.chk ? Object.keys(bd).find(s => bd[s] === (gs.turn === 'w' ? 'K' : 'k')) : null;
+  const kingSq = gs.chk && !rev ? Object.keys(bd).find(s => bd[s] === (gs.turn === 'w' ? 'K' : 'k')) : null;
   const scr = sq => { let f = sq.charCodeAt(0) - 97, r = 8 - +sq[1]; if (flip) { f = 7 - f; r = 7 - r; } return { x: g.x0 + f * c, y: g.y0 + r * c }; };
   // slide animation for the last move
-  const key = gs.last ? gs.last.join('') + gs.n : ''; if (key !== chessLastKey) { if (chessLastKey && gs.last) chessAnim = { from: gs.last[0], to: gs.last[1], t: 0 }; chessLastKey = key; }
+  const key = (L ? L.join('') : '-') + NK; if (key !== chessLastKey) { if (chessLastKey && L) chessAnim = { from: L[0], to: L[1], t: 0 }; else chessAnim = null; chessLastKey = key; }
   if (chessAnim) { chessAnim.t += dt / 0.18; if (chessAnim.t >= 1) chessAnim = null; }
-  const legal = chessSel && gs.legal[chessSel] ? gs.legal[chessSel] : [];
+  const legal = !rev && chessSel && gs.legal[chessSel] ? gs.legal[chessSel] : [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
     const ff = flip ? 7 - f : f, rr2 = flip ? 7 - r : r, sq = 'abcdefgh'[ff] + (8 - rr2), x = g.x0 + f * c, y = g.y0 + r * c, dark = (f + r) % 2;
     const sg = cx.createLinearGradient(x, y, x + c, y + c);
     if (dark) { sg.addColorStop(0, '#c98a4f'); sg.addColorStop(1, '#b0733c'); } else { sg.addColorStop(0, '#fff1d2'); sg.addColorStop(1, '#f5deb0'); }
     cx.fillStyle = sg; cx.fillRect(x, y, c + 0.5, c + 0.5);
-    if (gs.last && gs.last.includes(sq)) { cx.fillStyle = 'rgba(255,214,0,.48)'; cx.fillRect(x, y, c + 0.5, c + 0.5); }
+    if (L && L.includes(sq)) { cx.fillStyle = 'rgba(255,214,0,.48)'; cx.fillRect(x, y, c + 0.5, c + 0.5); }
     if (sq === chessSel) { cx.fillStyle = 'rgba(60,200,120,.6)'; cx.fillRect(x, y, c + 0.5, c + 0.5); }
     if (sq === kingSq) { const rg = cx.createRadialGradient(x + c / 2, y + c / 2, c * 0.1, x + c / 2, y + c / 2, c * 0.7); rg.addColorStop(0, 'rgba(255,40,40,.95)'); rg.addColorStop(1, 'rgba(255,40,40,0)'); cx.fillStyle = rg; cx.fillRect(x, y, c, c); }
     // coordinates
@@ -474,6 +496,22 @@ function drawChess(dt, T) {
     const p = scr(sq), occ = !!bd[sq]; cx.beginPath();
     if (occ) { cx.lineWidth = c * 0.08; cx.strokeStyle = 'rgba(30,140,80,.85)'; cx.arc(p.x + c / 2, p.y + c / 2, c * 0.44, 0, 7); cx.stroke(); }
     else { cx.fillStyle = 'rgba(30,140,80,.7)'; cx.arc(p.x + c / 2, p.y + c / 2, c * (0.14 + Math.sin(T * 6) * 0.01), 0, 7); cx.fill(); }
+  }
+  // review banner
+  if (rev) {
+    cx.fillStyle = 'rgba(20,10,50,.25)'; cx.fillRect(g.x0, g.y0, g.sz, g.sz);
+    const bh = 46, by = g.y0 + 6; cx.save(); cx.shadowColor = 'rgba(0,0,0,.4)'; cx.shadowBlur = 10; cx.fillStyle = chessBanner > 0 ? '#ff6b3d' : 'rgba(69,32,143,.94)'; rr(g.x0 + 8, by, g.sz - 16, bh, 14); cx.fill(); cx.restore();
+    cx.textAlign = 'center'; cx.fillStyle = '#fff'; cx.font = `${Math.min(18, g.sz / 20)}px "Lilita One"`;
+    const mv = chessView === 0 ? 'Start position' : `Viewing move ${chessView}/${gs.hn - 1} · ${Math.ceil(chessView / 2)}${chessView % 2 ? '.' : '…'} ${HV[3]}`;
+    cx.fillText(mv, VW / 2, by + 20); cx.font = `${Math.min(14, g.sz / 26)}px "Lilita One"`; cx.fillStyle = chessNew ? '#ffd84d' : '#d9ccff';
+    cx.fillText(chessNew ? `● New move played — tap LIVE to return` : 'Read-only · tap ⏭ LIVE to return', VW / 2, by + 38);
+  }
+  if (chessBanner > 0) chessBanner -= dt;
+  // move strip
+  if (chessHist.length > 1) {
+    const cur = chessView === null ? gs.hn - 1 : chessView, items = []; for (let i = Math.max(1, cur - 3); i < Math.min(gs.hn, cur + 4); i++) if (chessHist[i]) items.push(i);
+    const fw3 = Math.max(14, c * 0.42), y = g.y0 + g.sz + fw3 - 3; cx.font = '13px "Lilita One"'; cx.textAlign = 'center';
+    const w = (g.sz) / 7; items.forEach((i, k) => { const x = g.x0 + w * (k + 0.5); cx.fillStyle = i === cur ? '#ffcc33' : 'rgba(255,241,210,.75)'; cx.fillText(`${i % 2 ? Math.ceil(i / 2) + '.' : ''}${chessHist[i][3]}`, x, y); });
   }
   // player tags
   const opp = 1 - me; const tag = (i, y, top) => {

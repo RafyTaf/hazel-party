@@ -233,7 +233,7 @@ G.snow = {
   view(s) { return { sc: s.sc, n: s.n, ph: s.ph, ar: +s.ar.toFixed(2), fall: s.fall, ft: s.ft, cx: this.CX, cy: this.CY, p: s.p.map(p => [+p.x.toFixed(2), +p.y.toFixed(2), +p.r.toFixed(2), +p.rot.toFixed(2), p.cd > 0 ? +p.cd.toFixed(2) : 0, +p.fx.toFixed(2), +p.fy.toFixed(2), +p.fz.toFixed(2)]) }; }
 };
 G.chess = {
-  init() { const white = Math.random() < 0.5 ? 0 : 1; return { c: new Chess(), white, clk: [300, 300], last: null, res: null, end: null }; },
+  init() { const white = Math.random() < 0.5 ? 0 : 1; return { c: new Chess(), white, clk: [300, 300], last: null, res: null, end: null, h: [[new Chess().fen().split(' ')[0], null, null, null]] }; },
   side(s, i) { return (i === s.white) ? 'w' : 'b'; },
   tick(s, dt, R) {
     if (s.end !== null) { s.endT -= dt; if (s.endT <= 0) return s.end; return; }
@@ -248,14 +248,14 @@ G.chess = {
     if (m.t !== 'move' || s.c.turn() !== this.side(s, i)) return;
     let mv; try { mv = s.c.move({ from: m.from, to: m.to, promotion: m.promo || 'q' }); } catch (e) { return; }
     if (!mv) return;
-    s.last = [mv.from, mv.to];
+    s.last = [mv.from, mv.to]; s.h.push([s.c.fen().split(' ')[0], mv.from, mv.to, mv.san]);
     R.fx({ t: 'cmove', cap: !!mv.captured, chk: s.c.inCheck(), san: mv.san });
     if (s.c.isCheckmate()) this.finish(s, i, 'checkmate', R);
     else if (s.c.isDraw() || s.c.isStalemate()) this.finish(s, -1, s.c.isStalemate() ? 'stalemate' : 'draw', R);
   },
   view(s) {
     const legal = {}; if (s.end === null) for (const m of s.c.moves({ verbose: true })) (legal[m.from] = legal[m.from] || []).push(m.to);
-    return { fen: s.c.fen(), white: s.white, turn: s.c.turn(), clk: s.clk.map(c => Math.ceil(c)), last: s.last, legal, chk: s.c.inCheck(), end: s.end, res: s.res, n: s.c.history().length };
+    return { fen: s.c.fen(), white: s.white, turn: s.c.turn(), clk: s.clk.map(c => Math.ceil(c)), last: s.last, legal, chk: s.c.inCheck(), end: s.end, res: s.res, n: s.c.history().length, hn: s.h.length, h: s.h.slice(-4) };
   }
 };
 
