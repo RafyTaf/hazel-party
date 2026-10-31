@@ -50,6 +50,10 @@ const SFX = (() => {
     move() { tone(240, 0.06, 'sine', 0.5, -100); noise(0.05, 0.3, 2500, 0, 2); },
     capture() { tone(180, 0.15, 'square', 0.25, -90); noise(0.12, 0.4, 1500, 0, 1); },
     check() { tone(880, 0.12, 'square', 0.2); tone(880, 0.12, 'square', 0.2, 0, 0.16); },
+    snowhit() { tone(160, 0.2, 'sine', 0.6, -90); noise(0.25, 0.45, 600, 0, 0.6); noise(0.15, 0.25, 3000, 0.02, 1); },
+    snowdash() { noise(0.3, 0.35, 2400, 0, 0.6); tone(260, 0.2, 'triangle', 0.2, 400); },
+    fall() { tone(1200, 1.0, 'sine', 0.3, -1050); noise(0.5, 0.45, 250, 0.95, 0.5); tone(90, 0.4, 'square', 0.2, -50, 0.95); },
+    crunch() { noise(0.06, 0.12, 1800 + Math.random() * 1500, 0, 2); },
     join() { tone(523, 0.1, 'triangle', 0.3); tone(784, 0.2, 'triangle', 0.3, 0, 0.1); },
   };
   // --- music: tiny step sequencer, two songs ---

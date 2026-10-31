@@ -11,7 +11,7 @@ const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 5000, pingTimeout: 8000 });
 
 const rooms = new Map();
-const GAMES = ['dash', 'treat', 'fetch', 'snack', 'zoomies', 'chess'];
+const GAMES = ['dash', 'treat', 'fetch', 'snack', 'zoomies', 'snow', 'chess'];
 const CHARS = ['ralph', 'jordan'];
 const NAMES = { ralph: 'Ralph', jordan: 'Jordan' };
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -177,6 +177,60 @@ G.zoomies = {
     if (m.t === 'jump' && p.j <= 0) { p.j = 0.7; R.fx({ t: 'jump', i, only: i }); }
   },
   view(s) { return { t: s.t, ob: s.ob, len: this.len, p: s.p.map(p => [+p.x.toFixed(1), +p.v.toFixed(0), +p.j.toFixed(2), p.st > 0 ? 1 : 0]) }; }
+};
+G.snow = {
+  goal: 2, R0: 42, CX: 50, CY: 86,
+  init() { const s = { sc: [0, 0], n: 0, t: 0 }; this.reset(s); return s; },
+  reset(s) {
+    s.n++; s.ar = this.R0; s.rt = 0; s.ph = 'ready'; s.ft = 1.2; s.fall = -1;
+    s.p = [-1, 1].map(k => ({ x: this.CX + k * 22, y: this.CY, vx: 0, vy: 0, dx: 0, dy: 0, r: 4.5, cd: 0, fz: 0, rot: 0, fx: k < 0 ? 1 : -1, fy: 0 }));
+  },
+  tick(s, dt, R) {
+    s.t += dt;
+    if (s.ph === 'ready') { s.ft -= dt; if (s.ft <= 0) { s.ph = 'play'; R.fx({ t: 'sgo' }); } return; }
+    if (s.ph === 'fall') {
+      s.ft -= dt; const f = s.p[s.fall]; f.x += f.vx * dt; f.y += f.vy * dt; f.fz += dt;
+      if (s.ft <= 0) { const w = 1 - s.fall; if (s.sc[w] >= this.goal) return w; this.reset(s); }
+      return;
+    }
+    s.rt += dt;
+    s.ar = Math.max(20, this.R0 - Math.max(0, s.rt - 10) * 0.9);
+    for (const p of s.p) {
+      p.cd -= dt;
+      const m = 1 + (p.r - 4.5) * 0.12, acc = 170 / m;
+      p.vx += p.dx * acc * dt; p.vy += p.dy * acc * dt;
+      const f = Math.exp(-1.5 * dt); p.vx *= f; p.vy *= f;
+      const sp = Math.hypot(p.vx, p.vy), mx = 62 / Math.sqrt(m); if (sp > mx && p.cd < 0.7) { p.vx *= mx / sp; p.vy *= mx / sp; }
+      p.x += p.vx * dt; p.y += p.vy * dt; p.rot += sp * dt / Math.max(2, p.r);
+      p.r = Math.min(12, p.r + sp * dt * 0.018);
+      if (sp > 3) { p.fx = p.vx / sp; p.fy = p.vy / sp; }
+    }
+    const [a, b] = s.p, d = dist(a.x, a.y, b.x, b.y), rr = a.r + b.r;
+    if (d < rr && d > 0.01) {
+      const nx = (b.x - a.x) / d, ny = (b.y - a.y) / d, ov = rr - d, ma = a.r * a.r, mb = b.r * b.r;
+      a.x -= nx * ov * mb / (ma + mb); a.y -= ny * ov * mb / (ma + mb); b.x += nx * ov * ma / (ma + mb); b.y += ny * ov * ma / (ma + mb);
+      const rv = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+      if (rv > 0) {
+        const j = (1.9 * rv + 18) / (1 / ma + 1 / mb);
+        a.vx -= nx * j / ma; a.vy -= ny * j / ma; b.vx += nx * j / mb; b.vy += ny * j / mb;
+        const hard = rv > 30;
+        if (hard) { a.r = Math.max(4, a.r - 0.6); b.r = Math.max(4, b.r - 0.6); }
+        R.fx({ t: 'sbump', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, hard });
+      }
+    }
+    const out = s.p.map(p => dist(p.x, p.y, this.CX, this.CY) - s.ar);
+    let L = -1; if (out[0] > 0 || out[1] > 0) L = out[0] >= out[1] ? 0 : 1;
+    if (L >= 0) { s.fall = L; s.ph = 'fall'; s.ft = 2.4; s.sc[1 - L]++; R.fx({ t: 'sfall', i: L, w: 1 - L, x: s.p[L].x, y: s.p[L].y }); }
+  },
+  input(s, i, m, R) {
+    const p = s.p[i]; if (s.ph === 'fall') return;
+    if (m.t === 'dir') { let dx = +m.dx || 0, dy = +m.dy || 0; const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } p.dx = dx; p.dy = dy; }
+    if (m.t === 'dash' && s.ph === 'play' && p.cd <= 0) {
+      let dx = p.dx, dy = p.dy; if (Math.hypot(dx, dy) < 0.2) { dx = p.fx; dy = p.fy; } const l = Math.hypot(dx, dy) || 1;
+      const k = 75 / Math.sqrt(1 + (p.r - 4.5) * 0.12); p.vx += dx / l * k; p.vy += dy / l * k; p.cd = 1.6; R.fx({ t: 'sdash', i, x: p.x, y: p.y });
+    }
+  },
+  view(s) { return { sc: s.sc, n: s.n, ph: s.ph, ar: +s.ar.toFixed(2), fall: s.fall, ft: s.ft, cx: this.CX, cy: this.CY, p: s.p.map(p => [+p.x.toFixed(2), +p.y.toFixed(2), +p.r.toFixed(2), +p.rot.toFixed(2), p.cd > 0 ? +p.cd.toFixed(2) : 0, +p.fx.toFixed(2), +p.fy.toFixed(2), +p.fz.toFixed(2)]) }; }
 };
 G.chess = {
   init() { const white = Math.random() < 0.5 ? 0 : 1; return { c: new Chess(), white, clk: [300, 300], last: null, res: null, end: null }; },

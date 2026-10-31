@@ -25,6 +25,8 @@
         <button class="pick" data-c="ralph"><img src="art/ralph.png"><span>Ralph</span></button>
         <button class="pick" data-c="jordan"><img src="art/jordan.png"><span>Jordan</span></button>
       </div>
+      <button class="big green" id="b-bot">🤖 Play vs Hazel Bot</button>
+      <div class="srvmsg" id="t-srv"></div>
       <button class="big yellow" id="b-create">🎉 Create Party</button>
       <div class="joinrow"><input id="i-code" maxlength="4" placeholder="CODE" autocapitalize="characters" autocomplete="off"><button class="big blue" id="b-join">Join</button></div>
       <div class="err" id="t-err"></div>
@@ -111,5 +113,6 @@
 </div>
 <script src="/socket.io/socket.io.js"></script>
 <script src="audio.js"></script>
+<script src="offline.js"></script>
 <script src="game.js"></script>
 </body></html>

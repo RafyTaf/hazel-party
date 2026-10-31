@@ -2,6 +2,7 @@
 const $ = (s) => document.querySelector(s);
 const IMG = {};
 ['ralph', 'jordan', 'hazel', 'bone', 'broccoli', 'ball', 'cookie', 'pizza', 'couch', 'bowl', 'heart'].forEach(n => { IMG[n] = new Image(); IMG[n].src = `art/${n}.png`; });
+['wK', 'wQ', 'wR', 'wB', 'wN', 'wP', 'bK', 'bQ', 'bR', 'bB', 'bN', 'bP'].forEach(n => { IMG['pc_' + n] = new Image(); IMG['pc_' + n].src = `art/chess/${n}.svg`; });
 ['bg_yard', 'bg_kitchen', 'bg_apartment'].forEach(n => { IMG[n] = new Image(); IMG[n].src = `art/${n}.jpg`; });
 const NAMES = { ralph: 'Ralph', jordan: 'Jordan' };
 const COLORS = ['#ff3d7f', '#1f9bff'];
@@ -11,6 +12,7 @@ const INFO = {
   fetch: { ic: '🎾', name: "Who's the Favorite?", bg: 'bg_yard', tips: ['Hazel is waiting for a toy…', 'Your target ring bounces around — TAP to throw when it is right next to Hazel.', 'She fetches whichever toy lands closest.', 'First to 5 fetches wins!'] },
   snack: { ic: '🍕', name: 'Snack Snatch', bg: 'bg_kitchen', tips: ['Snacks keep appearing on the kitchen floor.', 'DRAG anywhere like a joystick to run.', 'Grab snacks before Hazel gobbles them!', 'Ram into each other to BUMP them away. Most snacks in 45s wins.'] },
   zoomies: { ic: '🏁', name: 'Zoomies Race', bg: 'bg_apartment', tips: ['Ride Hazel across the apartment!', 'Mash RUN as fast as you can.', 'Hit JUMP to hop over couches and bowls — crashing stuns you.', 'First to the finish wins!'] },
+  snow: { ic: '☃️', name: 'Snowball Summit', bg: null, tips: ['Top of a snowy mountain — roll your snowball!', 'DRAG anywhere like a joystick. Your snowball GROWS as it rolls.', 'Bigger = heavier. Tap 💨 SHOVE to charge into them!', 'Knock them off the cliff! First to 2 knockouts wins.'] },
   chess: { ic: '♟️', name: 'Hazel Chess', bg: null, tips: ['Classic chess, one board, two phones.', 'Tap a piece, then tap where it goes.', '5 minutes on each clock. Pawns auto-promote to queens.', 'Checkmate wins the point · Draw = no point.'] },
 };
 let token = localStorage.getItem('hp_token'); if (!token) { token = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('hp_token', token); }
@@ -242,6 +244,10 @@ function onFx(e) {
     case 'clear': SFX.play('coin'); break;
     case 'jump': SFX.play('jump'); break;
     case 'finish': SFX.play('fanfare'); flash(); break;
+    case 'sgo': SFX.play('ding'); wtext('PUSH!', 50, 60, '#ffcc00'); break;
+    case 'sbump': SFX.play('snowhit'); burst(e.x, e.y, ['#fff', '#d8f1ff', '#bfe3ff'], e.hard ? 26 : 10, e.hard ? 70 : 35, e.hard ? '❄️' : null); if (e.hard) { shakeT = 0.3; buzz(80); } else buzz(20); break;
+    case 'sdash': SFX.play('snowdash'); burst(e.x, e.y, ['#fff', '#d8f1ff'], 10, 30); if (mine) buzz(30); break;
+    case 'sfall': SFX.play('fall'); setTimeout(() => { shakeT = 0.4; }, 950); wtext(`${pname(e.w)} +1!`, 50, 40, COLORS[e.w]); if (e.i === me) buzz([100, 50, 200]); else buzz([30, 30, 30]); setTimeout(() => SFX.play(e.w === me ? 'coin' : 'bad'), 1100); break;
     case 'cmove': SFX.play(e.cap ? 'capture' : 'move'); if (e.chk) setTimeout(() => SFX.play('check'), 150); buzz(e.cap ? 50 : 15); if (e.cap) shakeT = 0.15; chessSel = null; break;
     case 'chessend': SFX.play(e.w === me ? 'win' : e.w < 0 ? 'ding' : 'lose'); banner(`${e.why === 'checkmate' ? 'CHECKMATE!' : e.why === 'timeout' ? "Time's up!" : e.why === 'resign' ? 'Resigned!' : 'Draw!'}${e.w >= 0 ? `<br>${pname(e.w)} wins` : ''}`); setTimeout(() => banner(null), 2900); break;
   }
@@ -256,11 +262,13 @@ function updateHud() {
     let v = gs && gs.sc ? gs.sc[i] : 0;
     if (room.game === 'zoomies' && gs && gs.p) v = Math.min(100, Math.round(gs.p[i][0] / gs.len * 100)) + '%';
     if (room.game === 'chess' && gs && gs.clk) { const c = gs.clk[i]; v = `${Math.floor(c / 60)}:${String(c % 60).padStart(2, '0')}`; }
+    if (room.game === 'snow' && gs && gs.sc) v = '⛄'.repeat(gs.sc[i]) || '0';
     const ie = el.querySelector('i'); if (ie.textContent !== String(v)) { ie.textContent = v; el.classList.remove('bump'); el.offsetHeight; el.classList.add('bump'); }
   });
   const t = $('#htimer'); let tt = '';
   if (gs && gs.t !== undefined) tt = Math.max(0, Math.ceil(gs.t));
   if (room.game === 'fetch' && gs) tt = `🎾 to 5`;
+  if (room.game === 'snow' && gs) tt = `☃️ to 2`;
   if (room.game === 'chess' && gs) tt = gs.end !== null ? '🏁' : ((gs.turn === 'w') === (gs.white === me) ? 'Your move' : 'Waiting…');
   if (t.textContent !== String(tt)) { t.textContent = tt; if (typeof tt === 'number' && tt <= 5 && tt > 0) SFX.play('tick'); }
   t.classList.toggle('hot', typeof tt === 'number' && tt <= 5);
@@ -277,24 +285,27 @@ function setupControls(g) {
     const run = $('#c-run'), jump = $('#c-jump');
     const r = e => { e.preventDefault(); send({ t: 'run' }); SFX.play('step'); buzz(8); hop[me] = 0.12; };
     run.addEventListener('pointerdown', r); jump.addEventListener('pointerdown', e => { e.preventDefault(); send({ t: 'jump' }); });
+  } else if (g === 'snow') {
+    setControls(`<button class="big blue" id="c-shove" style="flex:0 0 42%;margin-left:auto">💨 SHOVE</button>`);
+    $('#c-shove').addEventListener('pointerdown', e => { e.preventDefault(); send({ t: 'dash' }); });
   } else if (g === 'chess') {
     setControls(`<button class="mid red" id="c-resign" style="flex:0 0 auto;height:auto;margin-left:auto;font-size:16px">🏳️ Resign</button>`);
     $('#c-resign').onclick = () => { if (confirm('Resign this chess game?')) send({ t: 'resign' }); };
   } else setControls(null);
 }
-addEventListener('keydown', e => { if (room && room.phase === 'play' && room.game === 'zoomies') { if (e.code === 'Space' || e.code === 'ArrowUp') send({ t: 'jump' }); else send({ t: 'run' }); } });
+addEventListener('keydown', e => { if (room && room.phase === 'play' && room.game === 'snow' && e.code === 'Space') send({ t: 'dash' }); if (room && room.phase === 'play' && room.game === 'zoomies') { if (e.code === 'Space' || e.code === 'ArrowUp') send({ t: 'jump' }); else send({ t: 'run' }); } });
 cv.addEventListener('pointerdown', e => {
   if (!room || room.phase !== 'play' || !gs) return; const w = toW(e.clientX, e.clientY), g = room.game;
   if (g === 'dash') send({ t: 'tap', x: w.x, y: w.y });
   if (g === 'treat') { send({ t: 'x', x: w.x }); ctl.drag = true; }
   if (g === 'fetch') { if (!gs.th[me] && gs.ph === 'aim') { const p = fetchRet(me); send({ t: 'throw', x: p.x, y: p.y }); } }
-  if (g === 'snack') { joy = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId }; }
+  if (g === 'snack' || g === 'snow') { joy = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, id: e.pointerId }; }
   if (g === 'chess') chessTap(e.clientX, e.clientY);
 });
 cv.addEventListener('pointermove', e => {
   if (!room || room.phase !== 'play') return; const g = room.game;
   if (g === 'treat' && (ctl.drag || e.pointerType === 'mouse')) { const now = performance.now(); if (now - ctl.lastX > 30) { ctl.lastX = now; send({ t: 'x', x: toW(e.clientX, 0).x }); } }
-  if (g === 'snack' && joy && e.pointerId === joy.id) {
+  if ((g === 'snack' || g === 'snow') && joy && e.pointerId === joy.id) {
     joy.cx = e.clientX; joy.cy = e.clientY; const R = 50; const now = performance.now();
     if (now - (ctl.lastX || 0) > 40) { ctl.lastX = now; send({ t: 'dir', dx: (joy.cx - joy.x) / R, dy: (joy.cy - joy.y) / R }); }
   }
@@ -404,8 +415,7 @@ function drawZoomies(dt, T) {
     const bw = VW - 32, by = y0 + laneH * 0.17; cx.fillStyle = '#0005'; cx.fillRect(16, by, bw, 8); cx.fillStyle = COLORS[i]; cx.fillRect(16, by, bw * Math.min(1, px / gs.len), 8);
   });
 }
-const GLY = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
-function chessGeom() { const sz = Math.min(VW - 16, VH - 230), x0 = (VW - sz) / 2, y0 = Math.max(80, (VH - sz) / 2 - 20); return { sz, x0, y0, c: sz / 8 }; }
+function chessGeom() { const sz = Math.floor(Math.min(VW - 28, VH - 250) / 8) * 8, x0 = Math.round((VW - sz) / 2), y0 = Math.round(Math.max(96, (VH - sz) / 2 - 10)); return { sz, x0, y0, c: sz / 8 }; }
 function chessTap(px, py) {
   const g = chessGeom(), flip = gs.white !== me; let f = Math.floor((px - g.x0) / g.c), r = Math.floor((py - g.y0) / g.c);
   if (f < 0 || f > 7 || r < 0 || r > 7) { chessSel = null; return; }
@@ -414,38 +424,134 @@ function chessTap(px, py) {
   if (chessSel && gs.legal[chessSel] && gs.legal[chessSel].includes(sq)) { send({ t: 'move', from: chessSel, to: sq }); chessSel = null; return; }
   if (myTurn && gs.legal[sq]) { chessSel = sq; SFX.play('tap'); buzz(8); } else chessSel = null;
 }
+let chessAnim = null, chessLastKey = '';
 function drawChess(dt, T) {
-  const gr = cx.createLinearGradient(0, 0, 0, VH); gr.addColorStop(0, '#7a4af0'); gr.addColorStop(1, '#3a1a8a'); cx.fillStyle = gr; cx.fillRect(0, 0, VW, VH);
+  const gr = cx.createLinearGradient(0, 0, 0, VH); gr.addColorStop(0, '#8a5cff'); gr.addColorStop(1, '#2e1470'); cx.fillStyle = gr; cx.fillRect(0, 0, VW, VH);
+  // soft polka dots
+  cx.fillStyle = 'rgba(255,255,255,.06)'; for (let y = 0; y < VH; y += 46) for (let x = (y / 46 % 2) * 23; x < VW; x += 46) { cx.beginPath(); cx.arc(x, y, 7, 0, 7); cx.fill(); }
   if (!gs || !gs.fen) return;
-  const g = chessGeom(), flip = gs.white !== me, rows = gs.fen.split(' ')[0].split('/');
-  cx.fillStyle = '#ffcc00'; rr(g.x0 - 8, g.y0 - 8, g.sz + 16, g.sz + 16, 18); cx.fill();
+  const g = chessGeom(), flip = gs.white !== me, rows = gs.fen.split(' ')[0].split('/'), c = g.c;
+  // frame: wood with gold trim
+  cx.save(); cx.shadowColor = 'rgba(0,0,0,.45)'; cx.shadowBlur = 24; cx.shadowOffsetY = 10;
+  const fw = Math.max(14, c * 0.42); const wg = cx.createLinearGradient(0, g.y0 - fw, 0, g.y0 + g.sz + fw); wg.addColorStop(0, '#8b4a1f'); wg.addColorStop(0.5, '#6b3413'); wg.addColorStop(1, '#4a220a');
+  cx.fillStyle = wg; rr(g.x0 - fw, g.y0 - fw, g.sz + fw * 2, g.sz + fw * 2, fw * 0.9); cx.fill(); cx.restore();
+  cx.lineWidth = 3; cx.strokeStyle = '#ffcc33'; rr(g.x0 - fw + 4, g.y0 - fw + 4, g.sz + fw * 2 - 8, g.sz + fw * 2 - 8, fw * 0.7); cx.stroke();
+  cx.fillStyle = '#2a1206'; cx.fillRect(g.x0 - 2, g.y0 - 2, g.sz + 4, g.sz + 4);
   const bd = {}; rows.forEach((row, r) => { let f = 0; for (const ch of row) { if (/\d/.test(ch)) f += +ch; else { bd['abcdefgh'[f] + (8 - r)] = ch; f++; } } });
   const kingSq = gs.chk ? Object.keys(bd).find(s => bd[s] === (gs.turn === 'w' ? 'K' : 'k')) : null;
+  const scr = sq => { let f = sq.charCodeAt(0) - 97, r = 8 - +sq[1]; if (flip) { f = 7 - f; r = 7 - r; } return { x: g.x0 + f * c, y: g.y0 + r * c }; };
+  // slide animation for the last move
+  const key = gs.last ? gs.last.join('') + gs.n : ''; if (key !== chessLastKey) { if (chessLastKey && gs.last) chessAnim = { from: gs.last[0], to: gs.last[1], t: 0 }; chessLastKey = key; }
+  if (chessAnim) { chessAnim.t += dt / 0.18; if (chessAnim.t >= 1) chessAnim = null; }
+  const legal = chessSel && gs.legal[chessSel] ? gs.legal[chessSel] : [];
   for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
-    const ff = flip ? 7 - f : f, rr2 = flip ? 7 - r : r, sq = 'abcdefgh'[ff] + (8 - rr2), x = g.x0 + f * g.c, y = g.y0 + r * g.c;
-    cx.fillStyle = (f + r) % 2 ? '#8fd16a' : '#f4f9d9';
-    if (gs.last && gs.last.includes(sq)) cx.fillStyle = (f + r) % 2 ? '#e3c94a' : '#fff19a';
-    if (sq === chessSel) cx.fillStyle = '#7fd8ff';
-    if (sq === kingSq) cx.fillStyle = '#ff6b6b';
-    cx.fillRect(x, y, g.c + 0.5, g.c + 0.5);
-    const p = bd[sq];
-    if (p) {
-      const white = p === p.toUpperCase(); const lift = sq === chessSel ? Math.sin(T * 8) * 3 - 4 : 0;
-      cx.font = `${g.c * 0.82}px "DejaVu Sans","Segoe UI Symbol",serif`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
-      cx.fillStyle = 'rgba(0,0,0,.25)'; cx.fillText(GLY[p.toLowerCase()], x + g.c / 2 + 2, y + g.c / 2 + 4);
-      cx.lineWidth = g.c * 0.07; cx.strokeStyle = white ? '#45208f' : '#fff'; cx.strokeText(GLY[p.toLowerCase()], x + g.c / 2, y + g.c / 2 + lift);
-      cx.fillStyle = white ? '#fff' : '#2a1466'; cx.fillText(GLY[p.toLowerCase()], x + g.c / 2, y + g.c / 2 + lift);
-    }
-    if (chessSel && gs.legal[chessSel] && gs.legal[chessSel].includes(sq)) { cx.fillStyle = 'rgba(69,32,143,.45)'; cx.beginPath(); cx.arc(x + g.c / 2, y + g.c / 2, p ? g.c * 0.45 : g.c * 0.16, 0, 7); p ? (cx.lineWidth = 4, cx.strokeStyle = 'rgba(69,32,143,.6)', cx.stroke()) : cx.fill(); }
+    const ff = flip ? 7 - f : f, rr2 = flip ? 7 - r : r, sq = 'abcdefgh'[ff] + (8 - rr2), x = g.x0 + f * c, y = g.y0 + r * c, dark = (f + r) % 2;
+    const sg = cx.createLinearGradient(x, y, x + c, y + c);
+    if (dark) { sg.addColorStop(0, '#c98a4f'); sg.addColorStop(1, '#b0733c'); } else { sg.addColorStop(0, '#fff1d2'); sg.addColorStop(1, '#f5deb0'); }
+    cx.fillStyle = sg; cx.fillRect(x, y, c + 0.5, c + 0.5);
+    if (gs.last && gs.last.includes(sq)) { cx.fillStyle = 'rgba(255,214,0,.48)'; cx.fillRect(x, y, c + 0.5, c + 0.5); }
+    if (sq === chessSel) { cx.fillStyle = 'rgba(60,200,120,.6)'; cx.fillRect(x, y, c + 0.5, c + 0.5); }
+    if (sq === kingSq) { const rg = cx.createRadialGradient(x + c / 2, y + c / 2, c * 0.1, x + c / 2, y + c / 2, c * 0.7); rg.addColorStop(0, 'rgba(255,40,40,.95)'); rg.addColorStop(1, 'rgba(255,40,40,0)'); cx.fillStyle = rg; cx.fillRect(x, y, c, c); }
+    // coordinates
+    cx.font = `bold ${Math.round(c * 0.2)}px "Lilita One",sans-serif`; cx.fillStyle = dark ? '#fff1d2' : '#b0733c';
+    if (f === 0) { cx.textAlign = 'left'; cx.textBaseline = 'top'; cx.fillText(8 - rr2, x + 3, y + 2); }
+    if (r === 7) { cx.textAlign = 'right'; cx.textBaseline = 'bottom'; cx.fillText('abcdefgh'[ff], x + c - 3, y + c - 1); }
   }
   cx.textBaseline = 'alphabetic';
+  // pieces
+  const drawPiece = (p, x, y, lift = 0, sc = 1) => {
+    const im = IMG['pc_' + (p === p.toUpperCase() ? 'w' : 'b') + p.toUpperCase()]; if (!im || !im.complete) return;
+    const s = c * 0.92 * sc, px = x + (c - s) / 2, py = y + (c - s) / 2 - lift;
+    cx.save(); cx.fillStyle = 'rgba(0,0,0,.22)'; cx.beginPath(); cx.ellipse(x + c / 2, y + c * 0.86, c * 0.3, c * 0.08, 0, 0, 7); cx.fill();
+    cx.shadowColor = 'rgba(0,0,0,.35)'; cx.shadowBlur = c * 0.06; cx.shadowOffsetY = c * 0.03; cx.drawImage(im, px, py, s, s); cx.restore();
+  };
+  for (const sq in bd) {
+    if (chessAnim && sq === chessAnim.to) continue;
+    const p = scr(sq); drawPiece(bd[sq], p.x, p.y, sq === chessSel ? 4 + Math.sin(T * 8) * 2 : 0, sq === chessSel ? 1.08 : 1);
+  }
+  if (chessAnim && bd[chessAnim.to]) { const a = scr(chessAnim.from), b = scr(chessAnim.to), k = 1 - Math.pow(1 - chessAnim.t, 3); drawPiece(bd[chessAnim.to], a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, Math.sin(k * Math.PI) * c * 0.25, 1.06); }
+  for (const sq of legal) {
+    const p = scr(sq), occ = !!bd[sq]; cx.beginPath();
+    if (occ) { cx.lineWidth = c * 0.08; cx.strokeStyle = 'rgba(30,140,80,.85)'; cx.arc(p.x + c / 2, p.y + c / 2, c * 0.44, 0, 7); cx.stroke(); }
+    else { cx.fillStyle = 'rgba(30,140,80,.7)'; cx.arc(p.x + c / 2, p.y + c / 2, c * (0.14 + Math.sin(T * 6) * 0.01), 0, 7); cx.fill(); }
+  }
   // player tags
-  const opp = 1 - me; const tag = (i, y) => { const im = IMG[pchar(i)]; const h = 46; cx.drawImage(im, 14, y - h, h * im.naturalWidth / im.naturalHeight, h); cx.font = '20px "Lilita One"'; cx.textAlign = 'left'; cx.fillStyle = '#fff'; cx.fillText(`${pname(i)} · ${(gs.white === i) ? 'White' : 'Black'}${i === me ? ' (you)' : ''}`, 54, y - 14); };
-  tag(opp, g.y0 - 14); tag(me, g.y0 + g.sz + 62);
-  const hb = toS(0, 0); spr(IMG.hazel, (g.x0 + g.sz - 30 - OX) / S, (g.y0 + g.sz + 64 - OY) / S, 14, { rot: Math.sin(T * 3) * 0.08, shadow: false });
+  const opp = 1 - me; const tag = (i, y, top) => {
+    const im = IMG[pchar(i)]; const h = 48, myT = (gs.turn === 'w') === (gs.white === i), white = gs.white === i;
+    cx.fillStyle = myT && gs.end === null ? 'rgba(255,204,0,.95)' : 'rgba(255,255,255,.18)'; rr(10, y - h - 2, Math.min(VW - 20, 300), h + 6, 16); cx.fill();
+    if (im.naturalWidth) cx.drawImage(im, 16, y - h, h * im.naturalWidth / im.naturalHeight, h);
+    const pi = IMG['pc_' + (white ? 'wK' : 'bK')]; if (pi.complete) cx.drawImage(pi, 58, y - h + 6, 34, 34);
+    cx.font = '19px "Lilita One"'; cx.textAlign = 'left'; cx.fillStyle = myT && gs.end === null ? '#45208f' : '#fff';
+    cx.fillText(`${pname(i)}${i === me ? ' (you)' : ''} · ${white ? 'White' : 'Black'}`, 98, y - h / 2 + 4);
+    cx.font = '14px "Lilita One"'; cx.fillText(myT && gs.end === null ? (i === me ? 'Your move!' : 'Thinking…') : '', 98, y - h / 2 + 22);
+  };
+  const fw2 = Math.max(14, c * 0.42);
+  tag(opp, g.y0 - fw2 - 8); tag(me, g.y0 + g.sz + fw2 + 62);
+  spr(IMG.hazel, (VW - 44 - OX) / S, (g.y0 + g.sz + fw2 + 64 - OY) / S, 14, { rot: Math.sin(T * 3) * 0.08, shadow: false });
+}
+const snowFlakes = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), s: 1 + Math.random() * 2.5, v: 0.03 + Math.random() * 0.06, w: Math.random() * 6 }));
+let snowCrunch = 0;
+function drawSnow(dt, T) {
+  const sk = cx.createLinearGradient(0, 0, 0, VH); sk.addColorStop(0, '#5bb8ff'); sk.addColorStop(0.55, '#bfe6ff'); sk.addColorStop(1, '#eaf7ff'); cx.fillStyle = sk; cx.fillRect(0, 0, VW, VH);
+  // distant peaks
+  const mt = (x0, w, h, col, cap) => { const b = VH * 0.62; cx.fillStyle = col; cx.beginPath(); cx.moveTo(x0 - w, b); cx.lineTo(x0, b - h); cx.lineTo(x0 + w, b); cx.fill(); cx.fillStyle = cap; cx.beginPath(); cx.moveTo(x0 - w * 0.28, b - h * 0.72); cx.lineTo(x0, b - h); cx.lineTo(x0 + w * 0.28, b - h * 0.72); cx.lineTo(x0 + w * 0.1, b - h * 0.66); cx.lineTo(x0 - w * 0.05, b - h * 0.74); cx.fill(); };
+  mt(VW * 0.15, VW * 0.4, VH * 0.42, '#8fb3d9', '#fff'); mt(VW * 0.8, VW * 0.45, VH * 0.5, '#7a9fcc', '#fff'); mt(VW * 0.48, VW * 0.3, VH * 0.33, '#a6c6e6', '#fff');
+  cx.fillStyle = 'rgba(255,255,255,.55)'; cx.fillRect(0, VH * 0.62, VW, VH);
+  const cl = cx.createLinearGradient(0, VH * 0.62, 0, VH); cl.addColorStop(0, '#d6ecff'); cl.addColorStop(1, '#9cc4ea'); cx.fillStyle = cl; cx.fillRect(0, VH * 0.62, VW, VH);
+  const G0 = gs && gs.p ? gs : { ar: 42, cx: 50, cy: 86, p: [], ph: 'ready', n: 1, sc: [0, 0] };
+  const C = toS(G0.cx, G0.cy), ar = sm('sar', G0.ar, 6, dt) * S, R0 = 42 * S;
+  // cliff body below the platform
+  const dep = 26 * S; const rk = cx.createLinearGradient(0, C.y, 0, C.y + ar + dep); rk.addColorStop(0, '#6d7fa6'); rk.addColorStop(1, '#3b4670');
+  cx.fillStyle = 'rgba(0,30,80,.18)'; cx.beginPath(); cx.ellipse(C.x, C.y + ar + dep + 4, ar * 0.9, ar * 0.18, 0, 0, 7); cx.fill();
+  cx.fillStyle = rk; cx.beginPath(); cx.moveTo(C.x - ar, C.y); cx.lineTo(C.x - ar * 0.7, C.y + ar + dep * 0.7); cx.lineTo(C.x - ar * 0.2, C.y + ar + dep); cx.lineTo(C.x + ar * 0.35, C.y + ar + dep * 0.9); cx.lineTo(C.x + ar * 0.75, C.y + ar + dep * 0.6); cx.lineTo(C.x + ar, C.y); cx.closePath(); cx.fill();
+  cx.strokeStyle = 'rgba(255,255,255,.25)'; cx.lineWidth = 2; for (let k = -2; k <= 2; k++) { cx.beginPath(); cx.moveTo(C.x + k * ar * 0.3, C.y + ar * 0.8); cx.lineTo(C.x + k * ar * 0.33 + 6, C.y + ar + dep * 0.6); cx.stroke(); }
+  // old edge ghost while shrinking
+  if (ar < R0 - 2) { cx.setLineDash([6, 8]); cx.strokeStyle = 'rgba(255,80,80,.55)'; cx.lineWidth = 2; cx.beginPath(); cx.arc(C.x, C.y, R0, 0, 7); cx.stroke(); cx.setLineDash([]); }
+  // icy top
+  const ice = cx.createRadialGradient(C.x - ar * 0.3, C.y - ar * 0.4, ar * 0.1, C.x, C.y, ar); ice.addColorStop(0, '#ffffff'); ice.addColorStop(0.7, '#e3f3ff'); ice.addColorStop(1, '#a9d4f5');
+  cx.fillStyle = ice; cx.beginPath(); cx.arc(C.x, C.y, ar, 0, 7); cx.fill();
+  cx.lineWidth = Math.max(3, S * 1.6); cx.strokeStyle = '#ffffff'; cx.stroke();
+  cx.lineWidth = 2; cx.strokeStyle = 'rgba(80,150,220,.6)'; cx.beginPath(); cx.arc(C.x, C.y, ar - S * 1.5, 0, 7); cx.stroke();
+  cx.strokeStyle = 'rgba(255,255,255,.8)'; cx.lineWidth = 2; for (let k = 0; k < 5; k++) { const a = k * 1.3 + 0.4; cx.beginPath(); cx.arc(C.x + Math.cos(a) * ar * 0.4, C.y + Math.sin(a) * ar * 0.4, ar * 0.14, a, a + 1.2); cx.stroke(); }
+  if (G0.ar < 30) { cx.globalAlpha = 0.35 + Math.sin(T * 10) * 0.2; cx.strokeStyle = '#ff4060'; cx.lineWidth = 4; cx.beginPath(); cx.arc(C.x, C.y, ar, 0, 7); cx.stroke(); cx.globalAlpha = 1; }
+  // snowballs + riders, sorted by y
+  const order = G0.p.map((p, i) => i).sort((a, b) => G0.p[a][1] - G0.p[b][1]);
+  for (const i of order) {
+    const [px, py, pr, rot, cd, fx, fy, fz] = G0.p[i];
+    const falling = G0.ph === 'fall' && G0.fall === i;
+    const x = sm('snx' + i, px, falling ? 30 : 18, dt), y = sm('sny' + i, py, falling ? 30 : 18, dt), r = sm('snr' + i, pr, 10, dt);
+    const k = falling ? Math.max(0, 1 - fz / 1.0) : 1; if (k <= 0) continue;
+    const drop = falling ? fz * fz * 60 : 0;
+    const sp = toS(x, y + drop), rs = r * S * (falling ? 0.5 + 0.5 * k : 1);
+    cx.globalAlpha = falling ? k : 1;
+    const fxx = sm('snfx' + i, fx, 8, dt), fyy = sm('snfy' + i, fy, 8, dt);
+    const cpos = toS(x - fxx * (r + 3.5), y + drop - fyy * (r + 3.5) + 4);
+    const chH = 17 * S * (falling ? k : 1), im = IMG[pchar(i)];
+    const drawRider = () => { if (!im.naturalWidth) return; const w = chH * im.naturalWidth / im.naturalHeight; cx.save(); cx.translate(cpos.x, cpos.y); cx.rotate(fxx * 0.25 + Math.sin(T * 14) * 0.04); cx.scale(fxx < -0.1 ? -1 : 1, 1); cx.drawImage(im, -w / 2, -chH, w, chH); cx.restore(); };
+    if (!falling) { cx.fillStyle = 'rgba(40,90,150,.25)'; cx.beginPath(); cx.ellipse(sp.x, sp.y + rs * 0.85, rs * 0.95, rs * 0.32, 0, 0, 7); cx.fill(); }
+    if (fyy > 0.2) drawRider();
+    const bg = cx.createRadialGradient(sp.x - rs * 0.35, sp.y - rs * 0.4, rs * 0.1, sp.x, sp.y, rs); bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.65, '#eef7ff'); bg.addColorStop(1, '#a8cdee');
+    cx.fillStyle = bg; cx.beginPath(); cx.arc(sp.x, sp.y, rs, 0, 7); cx.fill();
+    cx.lineWidth = Math.max(2, rs * 0.08); cx.strokeStyle = COLORS[i]; cx.stroke();
+    // rolling texture
+    cx.save(); cx.beginPath(); cx.arc(sp.x, sp.y, rs, 0, 7); cx.clip(); cx.strokeStyle = 'rgba(120,170,220,.45)'; cx.lineWidth = Math.max(1.5, rs * 0.07);
+    for (let q = 0; q < 4; q++) { const ph = (rot + q * 1.57) % 6.283, off = Math.sin(ph) * rs; if (Math.cos(ph) < 0) continue; cx.beginPath(); cx.ellipse(sp.x + fxx * off, sp.y + fyy * off, rs * Math.abs(Math.cos(ph)) * 0.25 + 1, rs * 0.9, Math.atan2(fyy, fxx), 0, 7); cx.stroke(); }
+    cx.restore();
+    if (fyy <= 0.2) drawRider();
+    cx.globalAlpha = 1;
+    if (!falling) { label(x, y - r - 13, i === me ? 'YOU' : pname(i), COLORS[i]); if (i === me && cd > 0) { const p2 = toS(x, y); cx.strokeStyle = 'rgba(31,155,255,.8)'; cx.lineWidth = 3; cx.beginPath(); cx.arc(p2.x, p2.y, rs + 5, -1.57, -1.57 + 6.283 * (1 - cd / 1.6)); cx.stroke(); } }
+    if (!falling && i === me && G0.ph === 'play') { snowCrunch -= dt; const v = Math.hypot(fx, fy); if (snowCrunch <= 0 && joy) { snowCrunch = 0.18; SFX.play('crunch'); } }
+    if (!falling && Math.random() < 0.3) parts.push({ x: x - fxx * r, y: y + r * 0.8, vx: -fxx * 10, vy: -8, l: 0.35, c: '#ffffff', s: 1 + Math.random() });
+  }
+  // falling snow
+  cx.fillStyle = 'rgba(255,255,255,.9)'; for (const f of snowFlakes) { f.y += f.v * dt; if (f.y > 1) { f.y = 0; f.x = Math.random(); } cx.beginPath(); cx.arc((f.x + Math.sin(T + f.w) * 0.02) * VW, f.y * VH, f.s, 0, 7); cx.fill(); }
+  if (gs && gs.ph === 'ready') label(50, 34, `Bout ${gs.n} · Get ready…`, '#2a6fd6');
+  if (gs && gs.ph === 'fall') label(50, 34, `${pname(1 - gs.fall)} knocked ${pname(gs.fall)} off!`, COLORS[1 - gs.fall]);
+  if (gs && gs.ph === 'play' && gs.ar < 41.5) label(50, 34, '⚠️ The cliff is crumbling!', '#e0304e');
+  if (joy) { cx.globalAlpha = 0.5; cx.fillStyle = '#fff'; cx.beginPath(); cx.arc(joy.x, joy.y, 50, 0, 7); cx.fill(); cx.globalAlpha = 0.9; const dx = joy.cx - joy.x, dy = joy.cy - joy.y, l = Math.min(1, 50 / Math.max(1, Math.hypot(dx, dy))); cx.fillStyle = COLORS[me]; cx.beginPath(); cx.arc(joy.x + dx * l, joy.y + dy * l, 24, 0, 7); cx.fill(); cx.globalAlpha = 1; }
 }
 function rr(x, y, w, h, r) { cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
-const DRAW = { dash: drawDash, treat: drawTreat, fetch: drawFetch, snack: drawSnack, zoomies: drawZoomies, chess: drawChess };
+const DRAW = { dash: drawDash, treat: drawTreat, fetch: drawFetch, snack: drawSnack, zoomies: drawZoomies, snow: drawSnow, chess: drawChess };
 
 let lastF = performance.now();
 function frame(now) {
@@ -455,7 +561,7 @@ function frame(now) {
   const active = room && (room.phase === 'play' || room.phase === 'countdown');
   if (active) {
     if (shakeT > 0) { shakeT -= dt; cx.translate((Math.random() - .5) * 10, (Math.random() - .5) * 10); }
-    const g = room.game; if (room.phase === 'countdown' && INFO[g].bg) cover(IMG[INFO[g].bg]); else DRAW[g](dt, T);
+    const g = room.game; if (room.phase === 'countdown' && INFO[g].bg) cover(IMG[INFO[g].bg]); else if (room.phase === 'countdown' && g === 'snow') drawSnow(dt, T); else DRAW[g](dt, T);
     // particles
     for (const p of parts) {
       p.l -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (!p.txt) p.vy += 60 * dt;
