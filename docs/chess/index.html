@@ -33,6 +33,7 @@
       <button class="big green" id="b-online">📱 Play Online</button>
       <button class="big yellow" id="b-bot">🤖 Play vs Bot</button>
       <button class="big blue" id="b-analyze">🔍 Analysis Board</button>
+      <button class="big lichess" id="b-lichess">♞ Play on Lichess</button>
       <div class="srvmsg" id="t-srv"></div>
       <details class="howto">
         <summary>How to draw arrows</summary>
@@ -69,9 +70,9 @@
       </div>
       <div class="lbl">I play as</div>
       <div class="seg" id="seg-color">
-        <button data-v="w">White</button>
+        <button data-v="white">White</button>
         <button data-v="r" class="sel">Random</button>
-        <button data-v="b">Black</button>
+        <button data-v="black">Black</button>
       </div>
       <button class="big green" id="b-create">🎉 Create Room</button>
       <div class="or">or join a room</div>
@@ -109,7 +110,7 @@
       <div class="seg" id="seg-botcolor">
         <button data-v="w" class="sel">White</button>
         <button data-v="r">Random</button>
-        <button data-v="b">Black</button>
+        <button data-v="black">Black</button>
       </div>
       <div class="lbl">Strength</div>
       <div class="skills" id="seg-skill">
@@ -118,6 +119,90 @@
         <button data-v="hard"><b>Grandhazel</b><span>Looks ahead, fights hard</span></button>
       </div>
       <button class="big green" id="b-botgo">▶ Start Game</button>
+    </div>
+  </section>
+
+  <!-- LICHESS -->
+  <section class="screen" id="s-lichess">
+    <div class="panel lichess-panel">
+      <button class="back" data-go="s-home">← Back</button>
+      <h2>Play on Lichess</h2>
+      <div id="li-loggedout">
+        <p class="li-blurb">Play real rated games against real people, with your arrows on this phone. Sign in with a free Lichess account — we never see your password or keep your token on our server.</p>
+        <button class="big green" id="b-lilogin">Sign in with Lichess</button>
+        <p class="lbl">No account? It’s free at <a href="https://lichess.org/signup" target="_blank" rel="noopener">lichess.org</a></p>
+        <div class="err" id="t-lierr"></div>
+      </div>
+      <div id="li-loggedin" class="hidden">
+        <div class="li-profile">
+          <div>
+            <div class="li-user" id="li-user">@</div>
+            <div class="li-ratings" id="li-ratings"></div>
+          </div>
+          <button class="mid ghost" id="b-lilogout">Log out</button>
+        </div>
+        <div class="err" id="t-lierr2"></div>
+
+        <div class="li-sec">
+          <div class="lbl">Quick pairing</div>
+          <p class="li-note">Finds a random opponent. Board API seeks are Rapid, Classical, or Correspondence only (no Blitz/Bullet).</p>
+          <div class="seg" id="li-seek-rated">
+            <button data-v="0" class="sel">Casual</button>
+            <button data-v="1">Rated</button>
+          </div>
+          <div class="seg" id="li-seek-color">
+            <button data-v="white">White</button>
+            <button data-v="random" class="sel">Random</button>
+            <button data-v="black">Black</button>
+          </div>
+          <div class="tcgrid" id="li-seek-tc"></div>
+          <div class="seg wrap" id="li-seek-corr"></div>
+        </div>
+
+        <div class="li-sec">
+          <div class="lbl">Challenge a friend</div>
+          <input id="i-li-friend" maxlength="30" placeholder="Lichess username" autocomplete="off" autocapitalize="off">
+          <div class="seg" id="li-chal-rated">
+            <button data-v="0" class="sel">Casual</button>
+            <button data-v="1">Rated</button>
+          </div>
+          <div class="seg" id="li-chal-color">
+            <button data-v="white">White</button>
+            <button data-v="random" class="sel">Random</button>
+            <button data-v="black">Black</button>
+          </div>
+          <div class="tcgrid" id="li-chal-tc"></div>
+          <button class="mid green" id="b-li-challenge">Send challenge</button>
+        </div>
+
+        <div class="li-sec">
+          <div class="lbl">Open challenge link</div>
+          <p class="li-note">Create a link anyone can open to sit down at a board with you.</p>
+          <button class="mid purple" id="b-li-open">Create open link (15+10)</button>
+          <div id="li-open-url" class="hidden"></div>
+        </div>
+
+        <div class="li-sec" id="li-incoming-wrap">
+          <div class="lbl">Incoming challenges</div>
+          <div id="li-incoming"><div class="li-empty">None right now</div></div>
+        </div>
+        <div class="li-sec" id="li-outgoing-wrap">
+          <div class="lbl">Your challenges</div>
+          <div id="li-outgoing"><div class="li-empty">None right now</div></div>
+        </div>
+        <div class="li-sec" id="li-games-wrap">
+          <div class="lbl">Ongoing games</div>
+          <div id="li-games"><div class="li-empty">None</div></div>
+        </div>
+      </div>
+    </div>
+    <div id="li-waiting" class="hidden">
+      <div class="rbox pop">
+        <div class="spin"></div>
+        <div class="rtitle" id="li-wait-title">Looking for an opponent…</div>
+        <div class="rsub" id="li-wait-sub"></div>
+        <button class="mid red" id="b-li-cancelwait">Cancel</button>
+      </div>
     </div>
   </section>
 
@@ -171,6 +256,9 @@
       <button class="act" id="b-drawoffer">½ Draw</button>
       <button class="act" id="b-flip">⇅ Flip</button>
       <button class="act" id="b-pgn">PGN</button>
+      <button class="act hidden" id="b-abort">Abort</button>
+      <button class="act hidden" id="b-takeback">Takeback</button>
+      <button class="act hidden" id="b-ligame">Lichess</button>
     </div>
   </section>
 
@@ -180,6 +268,7 @@
       <div class="rtitle" id="r-title"></div>
       <div class="rsub" id="r-sub"></div>
       <button class="big green" id="b-rematch">🔁 Rematch</button>
+      <a class="mid purple" id="b-li-openresult" href="#" target="_blank" rel="noopener" style="display:none;text-decoration:none;text-align:center">Open on Lichess</a>
       <button class="mid ghost" id="b-home">Home</button>
     </div>
   </div>
@@ -188,6 +277,8 @@
   <div id="menu" class="hidden">
     <div class="mbox">
       <button class="mid" id="m-hint">💡 Hint (arrow)</button>
+      <button class="mid hidden" id="m-chat">💬 Chat</button>
+      <a class="mid hidden" id="m-ligame" href="#" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Open on Lichess</a>
       <button class="mid" id="m-fen">📋 Copy FEN</button>
       <button class="mid" id="m-loadfen">📥 Load FEN</button>
       <button class="mid" id="m-new">♻ New game</button>
@@ -201,6 +292,21 @@
     <div>Opponent offers a draw</div>
     <button class="mid green" id="b-drawyes">Accept</button>
     <button class="mid" id="b-drawno">Decline</button>
+  </div>
+
+  <div id="takebackask" class="hidden">
+    <div>Opponent wants a takeback</div>
+    <button class="mid green" id="b-tbyes">Accept</button>
+    <button class="mid" id="b-tbno">Decline</button>
+  </div>
+  <div id="claimask" class="hidden">
+    <div id="claimtxt">Opponent has left</div>
+    <button class="mid green" id="b-claimwin">Claim win</button>
+    <button class="mid" id="b-claimdraw">Claim draw</button>
+  </div>
+  <div id="lichat" class="hidden">
+    <div id="lichat-log"></div>
+    <form id="lichat-form"><input id="lichat-in" maxlength="140" placeholder="Message…" autocomplete="off"><button type="submit">Send</button></form>
   </div>
 
   <!-- A2HS -->

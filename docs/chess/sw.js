@@ -1,5 +1,5 @@
 /* Hazel Chess service worker — app shell for offline bot & analysis */
-const CACHE = 'hazel-chess-v1';
+const CACHE = 'hazel-chess-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './bot.js',
   './bot-worker.js',
   './sfx.js',
+  './lichess.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -30,6 +31,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
   if (url.pathname.includes('/socket.io/')) return;
   const dest = e.request.destination;
   const netFirst = dest === 'document' || dest === 'script' || dest === 'style' || url.pathname.endsWith('.js') || url.pathname.endsWith('.html') || url.pathname.endsWith('.css');

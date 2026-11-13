@@ -3,6 +3,11 @@ import { Chess } from '../vendor/chess.js';
 import { Board, ANNO, COLOR_KEYS } from './board.js';
 import { Bot, SKILL } from './bot.js';
 import { SFX, buzz } from './sfx.js';
+import {
+  LichessClient, SEEK_CONTROLS, CHALLENGE_EXTRA, CORR_DAYS,
+  applyUciMoves, moveToUci, parseUciList, resultFromState, clocksFromState, offerFlags,
+  HOST, redirectUri, classifySpeed,
+} from './lichess.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -272,11 +277,18 @@ function enterGame() {
   renderClocks();
   updateTurnChrome();
   const analysis = mode === 'analysis';
+  const onLi = mode === 'lichess';
   $('#b-resign').style.display = analysis ? 'none' : '';
-  $('#b-drawoffer').style.display = mode === 'online' ? '' : 'none';
+  $('#b-drawoffer').style.display = (mode === 'online' || onLi) ? '' : 'none';
   $('#m-new').style.display = analysis || mode === 'bot' ? '' : 'none';
   $('#m-hint').style.display = analysis || mode === 'bot' ? '' : 'none';
   $('#m-loadfen').style.display = analysis ? '' : 'none';
+  $$('#b-abort,#b-takeback,#b-ligame,#m-chat,#m-ligame').forEach(el => el && el.classList.toggle('hidden', !onLi));
+  if (onLi && liGameId) {
+    const href = HOST + '/' + liGameId;
+    $('#b-ligame').onclick = () => window.open(href, '_blank');
+    $('#m-ligame').href = href;
+  }
 }
 
 function startAnalysis() {
@@ -348,6 +360,7 @@ function displayed() {
 }
 
 function applyPosition() {
+  if (!board) return;
   const d = displayed();
   const reviewing = view !== null;
   const ch = new Chess(d.fen);
@@ -392,6 +405,23 @@ async function tryMove(from, to) {
   } else promo = legal[0].promotion;
   if (mode === 'online') {
     sock.emit('move', { from, to, promo });
+    return;
+  }
+  if (mode === 'lichess') {
+    const uci = moveToUci({ from, to, promotion: promo });
+    const mv = ch.move({ from, to, promotion: promo });
+    if (mv) {
+      hist.push({ fen: ch.fen(), from: mv.from, to: mv.to, san: mv.san, promo: mv.promotion, uci });
+      view = null;
+      playMoveSound(mv);
+      board.afterMoveClears();
+      applyPosition(); renderMoves(); renderNav(); updateTurnChrome();
+    }
+    try { await li.move(liGameId, uci); }
+    catch (e) {
+      if (liState) applyLiState(liState);
+      SFX.play('bad'); toast(e.message || 'Move failed');
+    }
     return;
   }
   const mv = ch.move({ from, to, promotion: promo });
@@ -469,6 +499,13 @@ function renderClocks() {
   const turn = (view === null ? chess : new Chess(displayed().fen)).turn();
   // clocks [white, black]
   let cw = localClk[0], cb = localClk[1];
+  if (mode === 'lichess' && liState) {
+    const c = clocksFromState(liState, liStateAt);
+    unlimited = c.unlimited || !!(liFull && liFull.daysPerTurn);
+    cw = c.w; cb = c.b;
+    localClk = [cw, cb];
+    if (liFull && liFull.daysPerTurn) { cw = null; cb = null; }
+  }
   if (mode === 'online' && gs && gs.end == null && !unlimited && room && room.phase === 'play') {
     const bothOn = !room.players || room.players.every(p => p && p.on);
     if (bothOn) {
@@ -480,8 +517,9 @@ function renderClocks() {
   const oppC = myColor === 'w' ? 'b' : 'w';
   $('#n-me').textContent = names[myColor] + (mode !== 'analysis' ? '' : '');
   $('#n-opp').textContent = names[oppC] + (botThinking && chess.turn() !== myColor ? ' · thinking' : '');
-  $('#c-me').textContent = fmtClk(myColor === 'w' ? cw : cb);
-  $('#c-opp').textContent = fmtClk(oppC === 'w' ? cw : cb);
+  const corr = mode === 'lichess' && liFull && liFull.daysPerTurn;
+  $('#c-me').textContent = corr ? (liFull.daysPerTurn + 'd') : fmtClk(myColor === 'w' ? cw : cb);
+  $('#c-opp').textContent = corr ? (liFull.daysPerTurn + 'd') : fmtClk(oppC === 'w' ? cw : cb);
   const hot = v => !unlimited && v < 20 && v > 0;
   $('#c-me').classList.toggle('hot', hot(myColor === 'w' ? cw : cb));
   $('#c-opp').classList.toggle('hot', hot(oppC === 'w' ? cw : cb));
@@ -500,7 +538,7 @@ function updateTurnChrome() {
   $('#gstatus').textContent = st;
   renderClocks();
 }
-setInterval(() => { if (mode === 'online' && gs && gs.end == null) renderClocks(); }, 200);
+setInterval(() => { if ((mode === 'online' && gs && gs.end == null) || (mode === 'lichess' && liState && !ended)) renderClocks(); }, 200);
 
 /* ---------- move list + nav ---------- */
 function renderMoves() {
@@ -589,11 +627,24 @@ $('#b-resign').onclick = () => {
   if (ended || mode === 'analysis') return;
   if (!confirm('Resign this game?')) return;
   if (mode === 'online') sock.emit('resign');
+  else if (mode === 'lichess') li.resign(liGameId).catch(e => toast(e.message));
   else { ended = true; chess._hcResign = myColor; showResult('resign'); }
 };
-$('#b-drawoffer').onclick = () => { if (mode === 'online' && sock) { sock.emit('offerdraw'); toast('Draw offered'); SFX.play('tap'); } };
-$('#b-drawyes').onclick = () => { sock && sock.emit('offerdraw'); $('#drawask').classList.add('hidden'); };
-$('#b-drawno').onclick = () => { sock && sock.emit('declinedraw'); $('#drawask').classList.add('hidden'); };
+$('#b-drawoffer').onclick = () => {
+  SFX.play('tap');
+  if (mode === 'online' && sock) { sock.emit('offerdraw'); toast('Draw offered'); }
+  else if (mode === 'lichess') { li.draw(liGameId, true).catch(e => toast(e.message)); toast('Draw offered'); }
+};
+$('#b-drawyes').onclick = () => {
+  if (mode === 'lichess') li.draw(liGameId, true).catch(e => toast(e.message));
+  else sock && sock.emit('offerdraw');
+  $('#drawask').classList.add('hidden');
+};
+$('#b-drawno').onclick = () => {
+  if (mode === 'lichess') li.draw(liGameId, false).catch(e => toast(e.message));
+  else sock && sock.emit('declinedraw');
+  $('#drawask').classList.add('hidden');
+};
 $('#b-pgn').onclick = async () => {
   SFX.play('tap');
   const pgn = toPGN();
@@ -629,6 +680,7 @@ $('#m-new').onclick = () => {
 };
 $('#m-hint').onclick = async () => {
   $('#menu').classList.add('hidden');
+  if (mode === 'lichess') { toast('Hints are off in Lichess games (fair play)'); return; }
   if (!bot) bot = new Bot();
   toast('Thinking of a hint…');
   const fen = (view === null ? chess : new Chess(displayed().fen)).fen();
@@ -643,15 +695,22 @@ $('#b-rematch').onclick = () => {
   SFX.play('pop');
   if (mode === 'online' && sock) sock.emit('rematch');
   else if (mode === 'bot') { myColor = myColor === 'w' ? 'b' : 'w'; startBotGame(); }
+  else if (mode === 'lichess') liRematch();
   else startAnalysis();
 };
 
 function leave() {
   $('#menu').classList.add('hidden');
   $('#result').classList.add('hidden');
+  $('#lichat').classList.add('hidden');
+  $('#claimask').classList.add('hidden');
+  $('#takebackask').classList.add('hidden');
   if (mode === 'online' && sock) sock.emit('leave');
+  const wasLi = mode === 'lichess';
+  if (wasLi) { li.closeGame(); liGameId = null; liFull = null; liState = null; }
   mode = null; room = null; gs = null; ended = false;
-  show('s-home');
+  if (wasLi && li.loggedIn) showLichess();
+  else show('s-home');
 }
 
 function showResult(why) {
@@ -688,6 +747,11 @@ function showResult(why) {
   $('#r-title').textContent = title;
   $('#r-sub').textContent = sub;
   $('#b-rematch').style.display = mode === 'analysis' ? 'none' : '';
+  const a = $('#b-li-openresult');
+  if (a) {
+    if (mode === 'lichess' && liGameId) { a.style.display = ''; a.href = HOST + '/' + liGameId; }
+    else a.style.display = 'none';
+  }
   $('#result').classList.remove('hidden');
   applyPosition();
   ended = true;
@@ -724,6 +788,493 @@ function api() {
     get myColor() { return myColor; },
     sqClient(sq) { return board.sqClient(sq); },
     goView,
+    get lichess() { return li; },
+    get liGame() { return liFull; },
+    get liState() { return liState; },
   };
 }
 window.__hc = api();
+
+/* ---------- Lichess ---------- */
+const li = new LichessClient();
+let liGameId = null, liFull = null, liState = null, liStateAt = 0;
+let liIncoming = {}, liOutgoing = {}, liGames = {}, liSeekRated = false, liSeekColor = 'random';
+let liChalRated = false, liChalColor = 'random', liChalTc = SEEK_CONTROLS[2]; // 15+10
+let liWaitKind = null, liWaitId = null;
+
+function liErr(m) {
+  const a = $('#t-lierr'), b = $('#t-lierr2');
+  if (a) a.textContent = m || '';
+  if (b) b.textContent = m || '';
+  if (m) SFX.play('bad');
+}
+function liPlayerName(p) {
+  if (!p) return 'Opponent';
+  const t = p.title ? p.title + ' ' : '';
+  const r = p.rating ? ` (${p.rating}${p.provisional ? '?' : ''})` : '';
+  return t + (p.name || p.id || 'Anonymous') + r;
+}
+function liRatingLine(me) {
+  if (!me || !me.perfs) return '';
+  const keys = [['rapid', 'Rapid'], ['classical', 'Classical'], ['correspondence', 'Corr'], ['blitz', 'Blitz']];
+  return keys.map(([k, lab]) => {
+    const p = me.perfs[k];
+    return p && p.rating ? `${lab} ${p.rating}${p.prov ? '?' : ''}` : null;
+  }).filter(Boolean).join(' · ');
+}
+
+function fillTcGrid(el, list, onPick, selectedId) {
+  el.innerHTML = list.map((t) =>
+    `<button type="button" data-id="${t.id}" class="${t.id === selectedId ? 'sel' : ''}"><b>${t.label}</b><small>${t.speed}</small></button>`
+  ).join('');
+  el.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const t = list.find((x) => x.id === b.dataset.id); if (!t) return;
+    SFX.play('tap');
+    $$('button', el).forEach((x) => x.classList.toggle('sel', x === b));
+    onPick(t);
+  };
+}
+
+function showWaiting(title, sub, kind) {
+  liWaitKind = kind;
+  $('#li-wait-title').textContent = title;
+  $('#li-wait-sub').textContent = sub || '';
+  $('#li-waiting').classList.remove('hidden');
+}
+function hideWaiting({ cancel = false } = {}) {
+  const kind = liWaitKind, id = liWaitId;
+  liWaitKind = null;
+  liWaitId = null;
+  $('#li-waiting').classList.add('hidden');
+  li.cancelSeek();
+  li.cancelChallenge();
+  if (cancel && kind === 'challenge' && id) {
+    li.cancelChallengeId(id).then(() => { delete liOutgoing[id]; renderLiLists(); }).catch(() => {});
+  }
+}
+$('#b-li-cancelwait').onclick = () => { SFX.play('tap'); hideWaiting({ cancel: true }); };
+
+$('#b-lichess').onclick = () => { SFX.init(); SFX.play('tap'); showLichess(); };
+
+async function showLichess() {
+  show('s-lichess');
+  liErr('');
+  const on = li.loggedIn;
+  $('#li-loggedout').classList.toggle('hidden', on);
+  $('#li-loggedin').classList.toggle('hidden', !on);
+  if (!on) return;
+  try {
+    if (!li.me) await li.account();
+    const me = li.me;
+    $('#li-user').textContent = '@' + (me.username || me.id);
+    $('#li-ratings').textContent = liRatingLine(me);
+    startEventStream();
+    refreshLiLists();
+  } catch (e) {
+    if (e.status === 401) { await li.logout(); showLichess(); liErr('Session expired — please sign in again.'); return; }
+    liErr(e.message || 'Could not reach Lichess');
+  }
+}
+
+$('#b-lilogin').onclick = async () => {
+  SFX.init(); SFX.play('tap');
+  try { location.href = await li.login(); }
+  catch (e) { liErr(e.message); }
+};
+$('#b-lilogout').onclick = async () => {
+  SFX.play('tap');
+  await li.logout();
+  showLichess();
+};
+
+function startEventStream() {
+  if (li._eventAbort) return;
+  (async function loop() {
+    while (li.loggedIn) {
+      try {
+        const { done } = await li.openEventStream(onLiEvent);
+        await done;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        console.warn('event stream', e);
+      }
+      if (!li.loggedIn) return;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  })();
+}
+
+function onLiEvent(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === 'gameStart') {
+    const id = (msg.game && (msg.game.gameId || msg.game.id));
+    hideWaiting();
+    if (id && (mode !== 'lichess' || liGameId !== id)) startLichessGame(id);
+  }
+  if (msg.type === 'gameFinish') {
+    const id = msg.game && (msg.game.gameId || msg.game.id);
+    delete liGames[id];
+    renderLiLists();
+  }
+  if (msg.type === 'challenge') {
+    const c = msg.challenge; if (!c) return;
+    const mine = li.me && (c.challenger && c.challenger.id === li.me.id);
+    const dir = c.direction || (mine ? 'out' : 'in');
+    if (dir === 'in') liIncoming[c.id] = c; else liOutgoing[c.id] = c;
+    renderLiLists();
+  }
+  if (msg.type === 'challengeCanceled' || msg.type === 'challengeDeclined') {
+    const c = msg.challenge; if (c) { delete liIncoming[c.id]; delete liOutgoing[c.id]; }
+    if (msg.type === 'challengeDeclined' && liWaitKind === 'challenge') { hideWaiting(); toast('Challenge declined'); }
+    if (msg.type === 'challengeCanceled') { /* no-op */ }
+    renderLiLists();
+  }
+}
+
+async function refreshLiLists() {
+  try {
+    const og = await li.ongoing();
+    liGames = {};
+    (og.nowPlaying || []).forEach((g) => { liGames[g.gameId] = g; });
+  } catch (_) {}
+  renderLiLists();
+}
+
+function renderLiLists() {
+  const cardCh = (c, incoming) => {
+    const who = incoming ? (c.challenger || {}) : (c.destUser || {});
+    const tc = c.timeControl || {};
+    let time = c.perf && c.perf.name || c.speed || '';
+    if (tc.type === 'clock') time = `${Math.round((tc.limit || 0) / 60)}+${tc.increment || 0}`;
+    else if (tc.type === 'correspondence') time = (tc.daysPerTurn || '') + ' day';
+    else if (tc.type === 'unlimited') time = 'Unlimited';
+    const rated = c.rated ? 'Rated' : 'Casual';
+    const btns = incoming
+      ? `<button class="mid green" data-act="accept" data-id="${esc(c.id)}">Accept</button><button class="mid" data-act="decline" data-id="${esc(c.id)}">Decline</button>`
+      : `<button class="mid" data-act="cancel" data-id="${esc(c.id)}">Cancel</button>`;
+    return `<div class="li-card"><div class="who">${esc(who.name || who.id || 'Player')}</div>${btns}<div class="meta">${esc(time)} · ${rated}${who.rating ? ' · ' + who.rating : ''}</div></div>`;
+  };
+  const ins = Object.values(liIncoming);
+  const outs = Object.values(liOutgoing);
+  const games = Object.values(liGames);
+  $('#li-incoming').innerHTML = ins.length ? ins.map((c) => cardCh(c, true)).join('') : '<div class="li-empty">None right now</div>';
+  $('#li-outgoing').innerHTML = outs.length ? outs.map((c) => cardCh(c, false)).join('') : '<div class="li-empty">None right now</div>';
+  $('#li-games').innerHTML = games.length ? games.map((g) => {
+    const opp = (g.opponent && (g.opponent.username || g.opponent.id)) || 'Opponent';
+    const turn = g.isMyTurn ? 'Your turn' : 'Their turn';
+    return `<div class="li-card"><div class="who">${esc(opp)}</div><button class="mid green" data-act="resume" data-id="${esc(g.gameId)}">Resume</button><div class="meta">${esc(g.perf || g.speed || '')} · ${turn}${g.rated ? ' · Rated' : ''}</div></div>`;
+  }).join('') : '<div class="li-empty">None</div>';
+}
+
+$('#li-incoming').onclick = $('#li-outgoing').onclick = $('#li-games').onclick = async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, act = b.dataset.act;
+  SFX.play('tap');
+  try {
+    if (act === 'accept') { await li.acceptChallenge(id); delete liIncoming[id]; }
+    else if (act === 'decline') { await li.declineChallenge(id); delete liIncoming[id]; }
+    else if (act === 'cancel') { await li.cancelChallengeId(id); delete liOutgoing[id]; hideWaiting(); }
+    else if (act === 'resume') startLichessGame(id);
+    renderLiLists();
+  } catch (err) { liErr(err.message); }
+};
+
+// seek / challenge setup
+(function setupLiControls() {
+  fillTcGrid($('#li-seek-tc'), SEEK_CONTROLS, (t) => startSeek(t), null);
+  $('#li-seek-corr').innerHTML = CORR_DAYS.map((d) => `<button data-days="${d}">${d} day${d > 1 ? 's' : ''}</button>`).join('');
+  $('#li-seek-corr').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    SFX.play('tap');
+    startSeek({ days: +b.dataset.days, label: b.dataset.days + ' day correspondence', speed: 'correspondence' });
+  };
+  $('#li-seek-rated').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; SFX.play('tap'); liSeekRated = b.dataset.v === '1'; $$('#li-seek-rated button').forEach((x) => x.classList.toggle('sel', x === b)); };
+  $('#li-seek-color').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; SFX.play('tap'); liSeekColor = b.dataset.v; $$('#li-seek-color button').forEach((x) => x.classList.toggle('sel', x === b)); };
+
+  const chalList = SEEK_CONTROLS.concat(CHALLENGE_EXTRA);
+  fillTcGrid($('#li-chal-tc'), chalList, (t) => { liChalTc = t; }, '15+10');
+  $('#li-chal-rated').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; SFX.play('tap'); liChalRated = b.dataset.v === '1'; $$('#li-chal-rated button').forEach((x) => x.classList.toggle('sel', x === b)); };
+  $('#li-chal-color').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; SFX.play('tap'); liChalColor = b.dataset.v; $$('#li-chal-color button').forEach((x) => x.classList.toggle('sel', x === b)); };
+})();
+
+async function startSeek(t) {
+  liErr('');
+  const rated = liSeekRated, color = liSeekColor;
+  const label = t.days ? t.label : `${t.label} ${t.speed}`;
+  showWaiting('Looking for an opponent…', `${rated ? 'Rated' : 'Casual'} ${label}`, 'seek');
+  try {
+    await li.seek({
+      time: t.time, increment: t.inc, days: t.days,
+      rated, color: t.days ? undefined : color,
+    });
+    // connection will stay open until gameStart or cancel; correspondence returns immediately
+    if (t.days) {
+      $('#li-wait-sub').textContent = 'Correspondence seek is up on Lichess. We’ll open the game when someone accepts.';
+    }
+  } catch (e) {
+    hideWaiting();
+    liErr(e.message || 'Seek failed');
+  }
+}
+
+$('#b-li-challenge').onclick = async () => {
+  SFX.play('tap'); liErr('');
+  const name = ($('#i-li-friend').value || '').trim();
+  if (!name) return liErr('Enter a Lichess username');
+  const t = liChalTc;
+  showWaiting('Challenge sent', `Waiting for ${name} to accept — ${t.label}`, 'challenge');
+  try {
+    const r = await li.challenge(name, {
+      limit: t.time * 60, increment: t.inc, rated: liChalRated, color: liChalColor,
+    });
+    let c = r.challenge;
+    if (c && c.challenge) c = c.challenge;
+    if (c && c.id) { liOutgoing[c.id] = c; liWaitId = c.id; }
+    renderLiLists();
+  } catch (e) {
+    hideWaiting();
+    liErr(e.message || 'Challenge failed');
+  }
+};
+
+$('#b-li-open').onclick = async () => {
+  SFX.play('tap'); liErr('');
+  try {
+    const r = await li.openChallenge({ limit: 15 * 60, increment: 10, rated: liChalRated, name: 'Hazel Chess' });
+    const url = r.url || r.challenge && r.challenge.url || (r.id && (HOST + '/' + r.id));
+    const el = $('#li-open-url');
+    el.classList.remove('hidden');
+    const w = r.urlWhite || r.whiteUrl, b = r.urlBlack || r.blackUrl;
+    el.innerHTML = `<div>Share this link:</div><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`
+      + (w ? `<div style="margin-top:6px">White: <a href="${esc(w)}" target="_blank" rel="noopener">${esc(w)}</a></div>` : '')
+      + (b ? `<div>Black: <a href="${esc(b)}" target="_blank" rel="noopener">${esc(b)}</a></div>` : '')
+      + `<button class="mid" id="b-li-copylink" style="margin-top:8px">Copy link</button>`;
+    const copy = $('#b-li-copylink');
+    if (copy) copy.onclick = async () => { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { prompt('Copy:', url); } };
+    try { if (navigator.share) { /* leave share to the user via copy */ } } catch (_) {}
+  } catch (e) { liErr(e.message || 'Could not create link'); }
+};
+
+async function startLichessGame(id) {
+  mode = 'lichess';
+  liGameId = id;
+  ended = false;
+  view = null;
+  newMoveWhileReview = false;
+  liFull = null;
+  liState = null;
+  hideWaiting();
+  li.cancelSeek();
+  li.cancelChallenge();
+  $('#lichat-log').innerHTML = '';
+  const go = async () => {
+    try {
+      const { done } = await li.streamGame(id, onLiGameMsg);
+      await done;
+      if (mode === 'lichess' && liGameId === id && !ended) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (mode === 'lichess' && liGameId === id && !ended) return go();
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      if (mode === 'lichess' && liGameId === id && !ended) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (mode === 'lichess' && liGameId === id && !ended) return go();
+      }
+      toast(e.message || 'Could not open the game');
+      if (mode === 'lichess' && !liFull) showLichess();
+    }
+  };
+  go();
+}
+
+function applyLiState(state) {
+  const fen0 = (liFull && liFull.initialFen) || 'startpos';
+  const r = applyUciMoves(Chess, state.moves, fen0);
+  chess = r.chess;
+  hist = r.hist;
+  if (view !== null && view >= hist.length - 1) { view = null; newMoveWhileReview = false; }
+  if (!board) return;
+  applyPosition();
+  renderMoves();
+  renderNav();
+  updateTurnChrome();
+  renderClocks();
+}
+
+function onLiGameMsg(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === 'gameFull') {
+    liFull = msg;
+    liState = msg.state;
+    liStateAt = Date.now();
+    const myId = li.me && li.me.id;
+    myColor = (msg.white && msg.white.id === myId) ? 'w' : 'b';
+    names = { w: liPlayerName(msg.white), b: liPlayerName(msg.black) };
+    unlimited = !msg.clock;
+    applyLiState(msg.state);
+    enterGame();
+    updateLiOffers();
+    $('#gstatus').textContent = (chess.turn() === myColor ? 'Your move' : 'Waiting');
+  } else if (msg.type === 'gameState') {
+    const prevN = liState ? parseUciList(liState.moves).length : 0;
+    liState = msg;
+    liStateAt = Date.now();
+    const n = parseUciList(msg.moves).length;
+    const grew = n > prevN;
+    if (grew && view !== null) newMoveWhileReview = true;
+    const prevFen = hist.length ? hist[hist.length - 1].fen : null;
+    applyLiState(msg);
+    if (grew) {
+      const last = hist[hist.length - 1];
+      // skip sound if we already played it optimistically (same last fen)
+      if (last && last.fen !== prevFen) {
+        const san = last.san || '';
+        playMoveSound({
+          ...last,
+          captured: san.includes('x'),
+          flags: san.startsWith('O-O-O') ? 'q' : san.startsWith('O-O') ? 'k' : (san.includes('x') ? 'c' : ''),
+        });
+      }
+      if (view === null && board) board.afterMoveClears();
+    }
+    updateLiOffers();
+    const r = resultFromState(msg, myColor);
+    if (r.over) {
+      ended = true;
+      applyPosition();
+      showLiResult(r);
+    }
+  } else if (msg.type === 'chatLine') {
+    appendLiChat(msg);
+  } else if (msg.type === 'opponentGone') {
+    if (msg.gone && (msg.claimWinInSeconds == null || msg.claimWinInSeconds <= 0)) {
+      $('#claimtxt').textContent = 'Opponent has left the game';
+      $('#claimask').classList.remove('hidden');
+    } else if (msg.gone) {
+      toast(`Opponent left — you can claim in ${msg.claimWinInSeconds}s`);
+    } else {
+      $('#claimask').classList.add('hidden');
+    }
+  }
+}
+
+function updateLiOffers() {
+  if (!liState || mode !== 'lichess') return;
+  const f = offerFlags(liState, myColor);
+  if (f.oppDraw) $('#drawask').classList.remove('hidden');
+  else $('#drawask').classList.add('hidden');
+  if (f.oppTakeback) $('#takebackask').classList.remove('hidden');
+  else $('#takebackask').classList.add('hidden');
+  // abort allowed roughly in the opening (no/few moves)
+  const n = parseUciList(liState.moves).length;
+  $('#b-abort').classList.toggle('hidden', n >= 2 || ended);
+}
+
+function showLiResult(r) {
+  if (!$('#result').classList.contains('hidden')) return;
+  SFX.play(r.iWon ? 'win' : (r.draw || r.why === 'abort' ? 'ding' : 'lose'));
+  $('#r-title').textContent = r.title;
+  $('#r-sub').textContent = r.sub;
+  $('#b-rematch').style.display = '';
+  const a = $('#b-li-openresult');
+  if (a) { a.style.display = ''; a.href = HOST + '/' + liGameId; }
+  $('#result').classList.remove('hidden');
+  $('#claimask').classList.add('hidden');
+  ended = true;
+  applyPosition();
+}
+
+async function liRematch() {
+  if (!liFull) return;
+  const opp = myColor === 'w' ? liFull.black : liFull.white;
+  if (!opp || !opp.id) { toast('No opponent to rematch'); return; }
+  const clk = liFull.clock;
+  show('s-lichess');
+  showLichess();
+  showWaiting('Rematch sent', 'Waiting for ' + (opp.name || opp.id), 'challenge');
+  try {
+    const opts = liFull.daysPerTurn
+      ? { days: liFull.daysPerTurn, rated: !!liFull.rated, color: 'random' }
+      : { limit: clk ? clk.initial / 1000 : 900, increment: clk ? clk.increment / 1000 : 0, rated: !!liFull.rated, color: 'random' };
+    const r = await li.challenge(opp.name || opp.id, opts);
+    let c = r.challenge;
+    if (c && c.challenge) c = c.challenge;
+    if (c && c.id) { liOutgoing[c.id] = c; liWaitId = c.id; }
+  } catch (e) { hideWaiting(); toast(e.message || 'Rematch failed'); }
+}
+
+$('#b-abort').onclick = () => {
+  if (mode !== 'lichess' || !liGameId) return;
+  if (!confirm('Abort this game?')) return;
+  li.abort(liGameId).catch((e) => toast(e.message));
+};
+$('#b-takeback').onclick = () => {
+  if (mode !== 'lichess' || !liGameId) return;
+  SFX.play('tap');
+  li.takeback(liGameId, true).catch((e) => toast(e.message));
+  toast('Takeback requested');
+};
+$('#b-tbyes').onclick = () => { li.takeback(liGameId, true).catch((e) => toast(e.message)); $('#takebackask').classList.add('hidden'); };
+$('#b-tbno').onclick = () => { li.takeback(liGameId, false).catch((e) => toast(e.message)); $('#takebackask').classList.add('hidden'); };
+$('#b-claimwin').onclick = () => { li.claimVictory(liGameId).catch((e) => toast(e.message)); $('#claimask').classList.add('hidden'); };
+$('#b-claimdraw').onclick = () => { li.claimDraw(liGameId).catch((e) => toast(e.message)); $('#claimask').classList.add('hidden'); };
+
+$('#m-chat').onclick = () => {
+  $('#menu').classList.add('hidden');
+  $('#lichat').classList.toggle('hidden');
+};
+function appendLiChat(msg) {
+  const log = $('#lichat-log');
+  const who = msg.username || msg.user || '';
+  const mine = li.me && who && who.toLowerCase() === (li.me.username || li.me.id || '').toLowerCase();
+  const d = document.createElement('div');
+  d.className = mine ? 'me' : '';
+  d.textContent = (mine ? '' : who + ': ') + (msg.text || '');
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  if ($('#lichat').classList.contains('hidden') && !mine) toast((who || 'Chat') + ': ' + (msg.text || ''));
+}
+$('#lichat-form').onsubmit = (e) => {
+  e.preventDefault();
+  const t = ($('#lichat-in').value || '').trim();
+  if (!t || !liGameId) return;
+  $('#lichat-in').value = '';
+  li.chat(liGameId, t).catch((err) => toast(err.message));
+};
+
+window.__hcLi = {
+  client: li,
+  login: (loc) => li.login(loc),
+  handleRedirect: (loc, st) => li.handleRedirect(loc, st),
+  startGame: (id) => startLichessGame(id),
+  redirectUri,
+  HOST,
+  SEEK_CONTROLS,
+  CHALLENGE_EXTRA,
+  CORR_DAYS,
+};
+
+// OAuth return + silent session restore
+(async function initLichess() {
+  try {
+    const r = await li.handleRedirect();
+    if (r !== 'none') {
+      try { history.replaceState(null, '', redirectUri()); } catch (_) {}
+      if (r === 'ok') { SFX.init(); toast('Signed in with Lichess'); await showLichess(); return; }
+      show('s-lichess');
+      liErr(r === 'denied' ? 'Login cancelled.' : ('Login failed: ' + r));
+      return;
+    }
+  } catch (e) {
+    try { history.replaceState(null, '', redirectUri()); } catch (_) {}
+    show('s-lichess');
+    liErr(e.message || 'Login failed');
+    return;
+  }
+  if (li.loggedIn) {
+    try { await li.account(); startEventStream(); }
+    catch (e) { if (e.status === 401) await li.logout(); }
+  }
+})();

@@ -165,3 +165,38 @@ input{font-family:'Fredoka',system-ui,sans-serif}
   .home-icon{width:88px;height:88px}
   .home-hero h1{font-size:34px}
 }
+
+/* ----- Lichess ----- */
+.big.lichess{background:linear-gradient(#4a4a4a,#1b1b1b);color:#fff;letter-spacing:.3px}
+.lichess-panel{max-height:100%;}
+.li-blurb{font-size:15px;font-weight:500;line-height:1.4;text-align:center;margin:0}
+.li-profile{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#efe9ff;border-radius:18px;padding:10px 12px}
+.li-user{font:24px 'Lilita One',sans-serif;color:#5b2bd6}
+.li-ratings{font-size:13px;font-weight:700;opacity:.85;line-height:1.35}
+.li-sec{display:flex;flex-direction:column;gap:8px;padding-top:6px;border-top:2px solid #efe9ff}
+.li-note{margin:0;font-size:12px;font-weight:500;opacity:.75;text-align:center;line-height:1.3}
+.tcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tcgrid button{font-size:15px;border-radius:14px;padding:10px 4px;background:#efe9ff;color:#7a4af0;box-shadow:inset 0 -4px 0 rgba(0,0,0,.1);display:flex;flex-direction:column;align-items:center;line-height:1.15;min-width:0}
+.tcgrid button small{font-family:'Fredoka',sans-serif;font-size:10px;opacity:.75;text-transform:uppercase}
+.tcgrid button.sel,.tcgrid button:active{background:linear-gradient(#ffe14d,#ffae00);color:#7a3a00}
+.li-card{background:#efe9ff;border-radius:16px;padding:10px;display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+.li-card .who{font:18px 'Lilita One',sans-serif;flex:1;min-width:80px}
+.li-card .meta{font-size:12px;font-weight:700;opacity:.75;width:100%}
+.li-card button{flex:none}
+.li-empty{text-align:center;opacity:.5;font-weight:700;padding:6px}
+#li-waiting{position:absolute;inset:0;background:rgba(20,8,50,.72);display:flex;align-items:center;justify-content:center;z-index:10;padding:20px}
+#li-waiting.hidden{display:none !important}
+.spin{width:42px;height:42px;border:5px solid #efe9ff;border-top-color:#7a3cf0;border-radius:50%;animation:spin 80s linear infinite;margin:0 auto 10px;animation-duration:.8s}
+.panel a{color:#5b2bd6;font-weight:700}
+#li-open-url{background:#efe9ff;border-radius:14px;padding:10px;word-break:break-all;font-size:13px;font-weight:700;text-align:center}
+#lichat{position:absolute;left:8px;right:8px;bottom:max(150px,env(safe-area-inset-bottom));background:#fff;color:#45208f;border-radius:18px;z-index:9;max-height:36vh;display:flex;flex-direction:column;box-shadow:0 8px 0 rgba(0,0,0,.25)}
+#lichat-log{flex:1;overflow-y:auto;padding:8px 10px;font-size:13px;font-weight:500;min-height:60px}
+#lichat-log .me{text-align:right;color:#5b2bd6}
+#lichat-form{display:flex;gap:6px;padding:6px}
+#lichat-form input{flex:1;border:2px solid #d9cfff;border-radius:12px;padding:8px;font:14px Fredoka,sans-serif;color:#45208f}
+#lichat-form button{background:#5b2bd6;color:#fff;border-radius:12px;padding:8px 12px;font-size:14px}
+#takebackask,#claimask{position:absolute;left:50%;bottom:max(200px,env(safe-area-inset-bottom));transform:translateX(-50%);background:#fff;color:#45208f;border-radius:20px;padding:12px 14px;z-index:9;display:flex;align-items:center;gap:8px;font-weight:700;box-shadow:0 8px 0 rgba(0,0,0,.25);white-space:nowrap}
+#takebackask.hidden,#claimask.hidden{display:none !important}
+.li-badge{display:inline-block;background:#1b1b1b;color:#fff;font-size:10px;padding:2px 6px;border-radius:8px;margin-left:4px;vertical-align:middle}
+
+.act-bar{flex-wrap:wrap}
