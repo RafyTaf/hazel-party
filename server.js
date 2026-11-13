@@ -5,10 +5,13 @@ const { Chess } = require('chess.js');
 const path = require('path');
 
 const app = express();
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h', setHeaders(res, file) {
+  if (/\.(html|js|css|json|webmanifest)$/.test(file) || file.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache');
+} }));
+app.get('/chess', (q, r) => r.redirect('/chess/'));
 app.get('/health', (q, r) => r.send('ok'));
 const server = http.createServer(app);
-const io = new Server(server, { pingInterval: 5000, pingTimeout: 8000 });
+const io = new Server(server, { pingInterval: 5000, pingTimeout: 8000, cors: { origin: true, credentials: true } });
 
 const rooms = new Map();
 const GAMES = ['dash', 'treat', 'fetch', 'snack', 'zoomies', 'snow', 'chess'];
@@ -309,6 +312,7 @@ setInterval(() => {
     tickRoom(room, dt);
     if (room.players.every(p => !p || !p.sid) && now - room.touched > 30 * 60e3) rooms.delete(room.code);
   }
+  if (typeof tickChess === 'function') tickChess(dt, now);
 }, 1000 / 30);
 
 io.on('connection', (sock) => {
@@ -354,6 +358,166 @@ io.on('connection', (sock) => {
   });
   sock.on('emote', (e) => { if (room) io.to(room.code).emit('fx', { t: 'emote', i: me, e: String(e).slice(0, 4) }); });
   sock.on('disconnect', () => { if (room && room.players[me] && room.players[me].sid === sock.id) { room.players[me].sid = null; room.touched = Date.now(); bcast(room); } });
+});
+
+
+// ---------------- standalone chess (namespace /hazelchess) ----------------
+const cio = io.of('/hazelchess');
+const crooms = new Map();
+function ccode() {
+  const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let s;
+  do { s = ''; for (let i = 0; i < 4; i++) s += L[Math.floor(Math.random() * L.length)]; } while (crooms.has(s) || rooms.has(s));
+  return s;
+}
+function cpub(room) {
+  return {
+    code: room.code, phase: room.phase, white: room.white, tc: room.tc,
+    players: room.players.map(p => p && { name: p.name, on: !!p.sid, color: p.color, ready: !!(room.ready && room.ready.has(p.token)) }),
+  };
+}
+function cview(g, room) {
+  const legal = {};
+  if (g.end === null) for (const m of g.c.moves({ verbose: true })) (legal[m.from] = legal[m.from] || []).push(m.to);
+  return {
+    fen: g.c.fen(), turn: g.c.turn(), clk: g.clk.map(c => Math.ceil(Math.max(0, c))),
+    last: g.last, legal, chk: g.c.inCheck(), end: g.end, res: g.res,
+    moves: g.moves, n: g.moves.length, white: room.white, unlimited: !room.tc.base, tc: room.tc,
+  };
+}
+function finishChess(room, winnerIdx, why) {
+  room.game.end = winnerIdx; room.game.res = why; room.phase = 'over';
+  cio.to(room.code).emit('fx', { t: 'chessend', w: winnerIdx, why });
+  cio.to(room.code).emit('gs', cview(room.game, room));
+  cio.to(room.code).emit('room', cpub(room));
+}
+function startChessGame(r, white) {
+  if (white === undefined) {
+    if (r.colorPref === 'w') white = 0;
+    else if (r.colorPref === 'b') white = 1;
+    else white = Math.random() < 0.5 ? 0 : 1;
+  }
+  r.white = white;
+  r.players[white].color = 'w';
+  r.players[1 - white].color = 'b';
+  r.game = { c: new Chess(), clk: [r.tc.base, r.tc.base], last: null, moves: [], end: null, res: null, drawOff: null };
+  r.phase = 'play'; r.ready = new Set();
+  cio.to(r.code).emit('room', cpub(r));
+  cio.to(r.code).emit('gs', cview(r.game, r));
+}
+function tickChess(dt, now) {
+  for (const room of crooms.values()) {
+    if (room.phase === 'play' && room.game && room.game.end === null && room.tc.base) {
+      const away = room.players.some(p => !p || !p.sid);
+      if (!away) {
+        const turn = room.game.c.turn();
+        const ci = turn === 'w' ? 0 : 1;
+        room.game.clk[ci] -= dt;
+        if (room.game.clk[ci] <= 0) {
+          room.game.clk[ci] = 0;
+          finishChess(room, turn === 'w' ? 1 - room.white : room.white, 'timeout');
+        }
+      }
+    }
+    if (room.phase === 'play' && room.game && room.game.end === null) {
+      room.sendAcc = (room.sendAcc || 0) + dt;
+      if (room.sendAcc >= 0.25) { room.sendAcc = 0; cio.to(room.code).emit('gs', cview(room.game, room)); }
+    }
+    if (room.players.every(p => !p || !p.sid) && now - room.touched > 30 * 60e3) crooms.delete(room.code);
+  }
+}
+cio.on('connection', (sock) => {
+  let room = null, me = -1;
+  const attach = (r, i) => {
+    room = r; me = i; r.players[i].sid = sock.id; r.touched = Date.now();
+    sock.join(r.code);
+    sock.emit('you', { i, token: r.players[i].token, code: r.code });
+    sock.emit('room', cpub(r));
+    if (r.game) sock.emit('gs', cview(r.game, r));
+  };
+  sock.on('create', ({ name, token, tc, color }) => {
+    const base = [0, 60, 180, 300, 600, 900].includes(+((tc && tc.base))) ? +(tc.base) : 300;
+    const inc = [0, 1, 2, 3, 5, 10].includes(+((tc && tc.inc))) ? +(tc.inc) : 0;
+    const pref = ['w', 'b', 'r'].includes(color) ? color : 'r';
+    const r = {
+      code: ccode(),
+      players: [{ token, name: String(name || 'Player').slice(0, 16), color: null, sid: null }, null],
+      tc: { base, inc }, colorPref: pref, white: 0, phase: 'lobby', game: null, touched: Date.now(), ready: new Set(),
+    };
+    crooms.set(r.code, r);
+    attach(r, 0);
+  });
+  sock.on('join', ({ code, token, name }) => {
+    const r = crooms.get(String(code || '').toUpperCase().trim());
+    if (!r) return sock.emit('err', 'Room not found. Check the code!');
+    const ex = r.players.findIndex(p => p && p.token === token);
+    if (ex >= 0) {
+      if (name) r.players[ex].name = String(name).slice(0, 16);
+      return attach(r, ex);
+    }
+    if (r.players[1]) return sock.emit('err', 'That room is full.');
+    if (r.phase !== 'lobby' && r.phase !== 'play' && r.phase !== 'over') return sock.emit('err', 'That room already started.');
+    if (r.phase !== 'lobby') return sock.emit('err', 'That room already started.');
+    r.players[1] = { token, name: String(name || 'Player').slice(0, 16), color: null, sid: null };
+    attach(r, 1);
+    cio.to(r.code).emit('fx', { t: 'joined' });
+    startChessGame(r);
+  });
+  sock.on('move', (m) => {
+    if (!room || room.phase !== 'play' || !room.game || room.game.end !== null || !m) return;
+    const g = room.game;
+    const side = me === room.white ? 'w' : 'b';
+    if (g.c.turn() !== side) return;
+    let mv; try { mv = g.c.move({ from: m.from, to: m.to, promotion: m.promo || 'q' }); } catch (e) { return; }
+    if (!mv) return;
+    g.last = [mv.from, mv.to];
+    g.moves.push({ from: mv.from, to: mv.to, san: mv.san, promo: mv.promotion });
+    if (room.tc.inc && room.tc.base) g.clk[side === 'w' ? 0 : 1] += room.tc.inc;
+    g.drawOff = null;
+    cio.to(room.code).emit('fx', { t: 'cmove', cap: !!mv.captured, chk: g.c.inCheck(), san: mv.san, from: mv.from, to: mv.to });
+    if (g.c.isCheckmate()) finishChess(room, me, 'checkmate');
+    else if (g.c.isStalemate()) finishChess(room, -1, 'stalemate');
+    else if (g.c.isThreefoldRepetition()) finishChess(room, -1, 'threefold');
+    else if (g.c.isInsufficientMaterial()) finishChess(room, -1, 'material');
+    else if (g.c.isDraw()) finishChess(room, -1, 'draw');
+    else cio.to(room.code).emit('gs', cview(g, room));
+  });
+  sock.on('resign', () => {
+    if (room && room.phase === 'play' && room.game && room.game.end === null) finishChess(room, 1 - me, 'resign');
+  });
+  sock.on('offerdraw', () => {
+    if (!room || room.phase !== 'play' || !room.game || room.game.end !== null) return;
+    if (room.game.drawOff === 1 - me) finishChess(room, -1, 'agree');
+    else { room.game.drawOff = me; cio.to(room.code).emit('fx', { t: 'drawoffer', i: me }); }
+  });
+  sock.on('declinedraw', () => {
+    if (!room || !room.game) return;
+    room.game.drawOff = null;
+    cio.to(room.code).emit('fx', { t: 'drawdeclined', i: me });
+  });
+  sock.on('rematch', () => {
+    if (!room || room.phase !== 'over') return;
+    room.ready = room.ready || new Set();
+    room.ready.add(room.players[me].token);
+    cio.to(room.code).emit('room', cpub(room));
+    cio.to(room.code).emit('fx', { t: 'rematchask', i: me });
+    if (room.ready.size >= 2) {
+      const nextWhite = 1 - room.white;
+      startChessGame(room, nextWhite);
+    }
+  });
+  sock.on('leave', () => {
+    if (room && room.players[me] && room.players[me].sid === sock.id) {
+      room.players[me].sid = null; room.touched = Date.now();
+      sock.leave(room.code); cio.to(room.code).emit('room', cpub(room));
+    }
+    room = null; me = -1;
+  });
+  sock.on('disconnect', () => {
+    if (room && room.players[me] && room.players[me].sid === sock.id) {
+      room.players[me].sid = null; room.touched = Date.now(); cio.to(room.code).emit('room', cpub(room));
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;

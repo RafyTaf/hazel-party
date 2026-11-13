@@ -17,3 +17,13 @@ npm start   # http://localhost:3000 (or $PORT)
 
 ## Deploy (Render)
 New → Blueprint (or Web Service) from this repo. `render.yaml` sets build `npm install`, start `npm start`, free plan.
+
+## Hazel Chess (standalone)
+A mobile-first chess app with chess.com-style arrows that work on a phone.
+
+Play at **https://hazel-party.onrender.com/chess**
+
+- Online 2-player (room code), vs bot, or a free analysis board
+- Draw arrows (drag) and highlight squares — also long-press, two-finger, or right-click on desktop
+- Installable to the iPhone home screen (Add to Home Screen)
+- The party game at `/` is unchanged
