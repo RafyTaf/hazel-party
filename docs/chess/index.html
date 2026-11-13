@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="theme-color" content="#5b2bd6">
+  <meta name="theme-color" content="#16120e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,7 +16,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,9 +25,9 @@
   <!-- HOME -->
   <section class="screen on" id="s-home">
     <div class="home-hero">
-      <img class="home-icon" src="icons/apple-touch-icon.png" alt="">
+      <img class="home-icon" src="pieces/wK.webp" alt="">
       <h1>Hazel Chess</h1>
-      <p class="tagline">Draw arrows on your phone — just like chess.com desktop.</p>
+      <p class="tagline">A 3D board you can actually draw on — arrows, highlights, and real games.</p>
     </div>
     <div class="home-btns">
       <button class="big green" id="b-online">📱 Play Online</button>
@@ -45,6 +45,7 @@
           <li>Two-finger drag also draws an arrow.</li>
           <li>On a computer: <b>right-click drag</b>, just like chess.com. Shift = red, Alt = blue, Ctrl = orange.</li>
           <li>Arrows are private — your opponent never sees them.</li>
+          <li>Drag around the board’s frame to tilt the 3D camera, or tap <b>2D</b> for a top-down view.</li>
         </ul>
       </details>
       <a class="back-party" href="../">← Back to Hazel Party</a>
@@ -70,9 +71,9 @@
       </div>
       <div class="lbl">I play as</div>
       <div class="seg" id="seg-color">
-        <button data-v="white">White</button>
+        <button data-v="w">White</button>
         <button data-v="r" class="sel">Random</button>
-        <button data-v="black">Black</button>
+        <button data-v="b">Black</button>
       </div>
       <button class="big green" id="b-create">🎉 Create Room</button>
       <div class="or">or join a room</div>
@@ -255,6 +256,7 @@
       <button class="act red" id="b-resign">🏳️ Resign</button>
       <button class="act" id="b-drawoffer">½ Draw</button>
       <button class="act" id="b-flip">⇅ Flip</button>
+      <button class="act" id="b-cam" title="Toggle top-down view" aria-pressed="false">2D</button>
       <button class="act" id="b-pgn">PGN</button>
       <button class="act hidden" id="b-abort">Abort</button>
       <button class="act hidden" id="b-takeback">Takeback</button>

@@ -1,6 +1,7 @@
 'use strict';
 import { Chess } from '../vendor/chess.js';
 import { Board, ANNO, COLOR_KEYS } from './board.js';
+import { Board3D } from './board3d.js';
 import { Bot, SKILL } from './bot.js';
 import { SFX, buzz } from './sfx.js';
 import {
@@ -329,7 +330,7 @@ function startBotGame(fromFen) {
 function ensureBoard() {
   if (board) return board;
   const cv = $('#board');
-  board = new Board(cv, {
+  const opts = {
     onMove: (from, to) => tryMove(from, to),
     canMoveFrom: (sq, piece) => {
       if (ended || view !== null) return false;
@@ -341,7 +342,13 @@ function ensureBoard() {
       return (turn === myColor);
     },
     onAnno: () => {},
-  });
+  };
+  try {
+    board = new Board3D(cv, opts);
+  } catch (e) {
+    console.warn('3D board unavailable, using 2D', e);
+    board = new Board(cv, opts);
+  }
   window.__hc = api();
   return board;
 }
@@ -480,7 +487,7 @@ function pickPromo(opts, color) {
     const pieces = { q: 'Q', r: 'R', b: 'B', n: 'N' };
     el.innerHTML = opts.map(p => {
       const n = (color === 'w' ? 'w' : 'b') + pieces[p];
-      return `<button data-p="${p}"><img src="../art/chess/${n}.svg" alt="${p}"></button>`;
+      return `<button data-p="${p}"><img src="pieces/${n}.webp" alt="${p}"></button>`;
     }).join('');
     el.classList.remove('hidden');
     promoResolver = (v) => { el.classList.add('hidden'); promoResolver = null; resolve(v); };
@@ -622,6 +629,15 @@ $('#b-flip').onclick = () => {
   const cur = flipForced != null ? flipForced : (myColor === 'b');
   flipForced = !cur;
   applyPosition();
+  if (board && board.resetCamera) board.resetCamera();
+};
+$('#b-cam').onclick = () => {
+  SFX.play('tap');
+  if (!board || !board.setTopDown) return;
+  board.setTopDown(!board.topDown);
+  $('#b-cam').textContent = board.topDown ? '3D' : '2D';
+  $('#b-cam').setAttribute('aria-pressed', board.topDown ? 'true' : 'false');
+  $('#b-cam').classList.toggle('on', board.topDown);
 };
 $('#b-resign').onclick = () => {
   if (ended || mode === 'analysis') return;
@@ -787,6 +803,8 @@ function api() {
     get gs() { return gs; },
     get myColor() { return myColor; },
     sqClient(sq) { return board.sqClient(sq); },
+    setTopDown: (v) => board && board.setTopDown && board.setTopDown(v),
+    get topDown() { return !!(board && board.topDown); },
     goView,
     get lichess() { return li; },
     get liGame() { return liFull; },

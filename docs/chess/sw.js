@@ -1,5 +1,5 @@
 /* Hazel Chess service worker — app shell for offline bot & analysis */
-const CACHE = 'hazel-chess-v3';
+const CACHE = 'hazel-chess-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -16,7 +16,14 @@ const ASSETS = [
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './icons/favicon-32.png',
+  './board3d.js',
+  './pieces/wK.webp', './pieces/wQ.webp', './pieces/wR.webp',
+  './pieces/wB.webp', './pieces/wN.webp', './pieces/wP.webp',
+  './pieces/bK.webp', './pieces/bQ.webp', './pieces/bR.webp',
+  './pieces/bB.webp', './pieces/bN.webp', './pieces/bP.webp',
   '../vendor/chess.js',
+  '../vendor/three/three.module.min.js',
+
   '../art/chess/wK.svg', '../art/chess/wQ.svg', '../art/chess/wR.svg',
   '../art/chess/wB.svg', '../art/chess/wN.svg', '../art/chess/wP.svg',
   '../art/chess/bK.svg', '../art/chess/bQ.svg', '../art/chess/bR.svg',
