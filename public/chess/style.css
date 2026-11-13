@@ -203,6 +203,10 @@ input{font-family:'Outfit',system-ui,sans-serif}
 .act-bar{flex-wrap:wrap}
 
 @keyframes spin{to{transform:rotate(360deg)}}
-#b-cam.on{background:#c6a35d;color:#1a140e}
+.cam-switch{position:absolute;right:8px;bottom:8px;z-index:4;display:flex;gap:0;background:rgba(16,12,10,.78);border:1px solid rgba(198,163,93,.65);border-radius:18px;overflow:hidden;backdrop-filter:blur(8px);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.cam-switch button{margin:0;min-width:48px;height:34px;padding:0 11px;border-radius:0;background:transparent;color:#e8d5a3;font:700 13px 'Outfit',system-ui,sans-serif;letter-spacing:.4px;box-shadow:none;text-shadow:none;border-right:1px solid rgba(198,163,93,.3)}
+.cam-switch button:last-child{border-right:none}
+.cam-switch button.sel{background:#c6a35d;color:#1a140e}
+.cam-switch button:active{transform:none;background:rgba(198,163,93,.35)}
 .home-icon{background:transparent}
 body.ingame,#s-game.on{background:#14110e}

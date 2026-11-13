@@ -272,6 +272,7 @@ function enterGame() {
   show('s-game');
   ensureBoard();
   board.clearAnnotations();
+  if (board.drawMode) { board.setDrawMode(false); syncDrawBtn(); }
   applyPosition();
   renderMoves();
   renderNav();
@@ -297,6 +298,7 @@ function startAnalysis() {
   chess = new Chess();
   hist = [{ fen: chess.fen(), from: null, to: null, san: null }];
   myColor = 'w';
+  flipForced = null;
   names = { w: 'White', b: 'Black' };
   unlimited = true;
   localClk = [0, 0];
@@ -342,6 +344,11 @@ function ensureBoard() {
       return (turn === myColor);
     },
     onAnno: () => {},
+    view: savedView(),
+    onViewChange: (mode) => {
+      try { localStorage.setItem('hc_view', mode); } catch (_) {}
+      syncCamBtn(mode);
+    },
   };
   try {
     board = new Board3D(cv, opts);
@@ -350,7 +357,24 @@ function ensureBoard() {
     board = new Board(cv, opts);
   }
   window.__hc = api();
+  syncCamBtn((board && board.viewMode) || savedView());
   return board;
+}
+
+function savedView() {
+  try {
+    const v = localStorage.getItem('hc_view');
+    if (v === 'top' || v === 'tilt' || v === 'flat') return v;
+  } catch (_) {}
+  return 'top';
+}
+function syncCamBtn(mode) {
+  mode = mode || (board && board.viewMode) || savedView();
+  $$('#cam-switch [data-view]').forEach((b) => {
+    const on = b.dataset.view === mode;
+    b.classList.toggle('sel', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
 }
 
 function legalMap(ch) {
@@ -631,14 +655,18 @@ $('#b-flip').onclick = () => {
   applyPosition();
   if (board && board.resetCamera) board.resetCamera();
 };
-$('#b-cam').onclick = () => {
+$('#cam-switch').onclick = (e) => {
+  const b = e.target.closest('[data-view]');
+  if (!b) return;
   SFX.play('tap');
-  if (!board || !board.setTopDown) return;
-  board.setTopDown(!board.topDown);
-  $('#b-cam').textContent = board.topDown ? '3D' : '2D';
-  $('#b-cam').setAttribute('aria-pressed', board.topDown ? 'true' : 'false');
-  $('#b-cam').classList.toggle('on', board.topDown);
+  const mode = b.dataset.view;
+  if (board && board.setView) board.setView(mode);
+  else {
+    try { localStorage.setItem('hc_view', mode); } catch (_) {}
+    syncCamBtn(mode);
+  }
 };
+try { syncCamBtn(savedView()); } catch (_) {}
 $('#b-resign').onclick = () => {
   if (ended || mode === 'analysis') return;
   if (!confirm('Resign this game?')) return;
@@ -725,6 +753,7 @@ function leave() {
   const wasLi = mode === 'lichess';
   if (wasLi) { li.closeGame(); liGameId = null; liFull = null; liState = null; }
   mode = null; room = null; gs = null; ended = false;
+  flipForced = null;
   if (wasLi && li.loggedIn) showLichess();
   else show('s-home');
 }
@@ -803,8 +832,12 @@ function api() {
     get gs() { return gs; },
     get myColor() { return myColor; },
     sqClient(sq) { return board.sqClient(sq); },
+    pieceClient(sq) { return board.pieceClient ? board.pieceClient(sq) : board.sqClient(sq); },
+    pickSq(x, y, opts) { return board._sqAt(x, y, opts || {}); },
     setTopDown: (v) => board && board.setTopDown && board.setTopDown(v),
+    setView: (m, o) => board && board.setView && board.setView(m, o),
     get topDown() { return !!(board && board.topDown); },
+    get viewMode() { return (board && board.viewMode) || 'top'; },
     goView,
     get lichess() { return li; },
     get liGame() { return liFull; },

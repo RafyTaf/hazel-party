@@ -1,5 +1,5 @@
 /* Hazel Chess service worker — app shell for offline bot & analysis */
-const CACHE = 'hazel-chess-v4';
+const CACHE = 'hazel-chess-v5';
 const ASSETS = [
   './',
   './index.html',

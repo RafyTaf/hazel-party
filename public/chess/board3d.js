@@ -8,6 +8,21 @@ const SQ = 1; // square size
 const PIECE_H = { P: 1.22, N: 1.58, B: 1.72, R: 1.58, Q: 1.92, K: 2.08 };
 const BASE_R = { P: 0.20, N: 0.22, B: 0.20, R: 0.23, Q: 0.22, K: 0.24 };
 
+/** Camera presets. `polar` is radians from vertical (0 = straight down). */
+const VIEW_ORDER = ['top', 'tilt', 'flat'];
+const VIEW_PRESET = {
+  // Default: ~22° from vertical, player's side, board fills portrait width.
+  top:  { polar: 22 * DEG, azim: 0, dist: 13.6, targetY: 0.04 },
+  // Original cinematic angle.
+  tilt: { polar: 47 * DEG, azim: 0, dist: 14.8, targetY: 0.18 },
+  // Near-orthographic 2D.
+  flat: { polar: 8 * DEG,  azim: 0, dist: 14.2, targetY: 0 },
+};
+function camPreset(mode) {
+  const p = VIEW_PRESET[mode] || VIEW_PRESET.top;
+  return { polar: p.polar, azim: p.azim, dist: p.dist, targetY: p.targetY };
+}
+
 function woodCanvas(w, h, c1, c2, seed = 1, vertical = true) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -89,11 +104,13 @@ export class Board3D {
     this._T = 0;
     this._lastT = 0;
     this._turn = 'w';
-    this.topDown = false;
+    this.viewMode = VIEW_PRESET[opts.view] ? opts.view : 'top';
+    this.topDown = this.viewMode !== 'tilt';
     this._userZoom = false;
-    this._cam = { polar: 47 * DEG, azim: 0, dist: 14.8, targetY: 0.18 };
+    this._cam = camPreset(this.viewMode);
     this._camGoal = { ...this._cam };
     this._orbit = null;
+    this.onViewChange = opts.onViewChange || (() => {});
 
     this._ptrs = new Map();
     this._lp = 0;
@@ -380,17 +397,32 @@ export class Board3D {
   clearAnnotations() { this.arrows = []; this.marks = {}; this.preview = null; this.onAnno(); this._syncArrows(); this._syncHighlights(); }
   afterMoveClears() { if (this.clearOnMove) this.clearAnnotations(); this.sel = null; this.ghost = null; this._syncLegal(); this._syncHighlights(); }
   setTurn(t) { this._turn = t; }
-  setTopDown(on) {
-    this.topDown = !!on;
+  setView(mode, { immediate = false } = {}) {
+    if (!VIEW_PRESET[mode]) mode = 'top';
+    this.viewMode = mode;
+    this.topDown = mode !== 'tilt';
     this._userZoom = false;
-    if (this.topDown) this._camGoal = { polar: 20 * DEG, azim: this._cam.azim, dist: 15.4, targetY: 0 };
-    else this._camGoal = { polar: 47 * DEG, azim: 0, dist: 14.8, targetY: 0.18 };
+    this._camGoal = camPreset(mode);
+    this._fitDist();
+    if (immediate) {
+      this._cam = { ...this._camGoal };
+      this._placeCam(1);
+    }
+    this.onViewChange(mode);
+  }
+  cycleView() {
+    const i = VIEW_ORDER.indexOf(this.viewMode);
+    this.setView(VIEW_ORDER[(i + 1) % VIEW_ORDER.length]);
+    return this.viewMode;
+  }
+  setTopDown(on) {
+    // Compat: true → top-down 3D (the new default), false → cinematic tilt.
+    this.setView(on ? 'top' : 'tilt');
   }
   resetCamera() {
     this._userZoom = false;
-    this._camGoal = this.topDown
-      ? { polar: 20 * DEG, azim: 0, dist: 15.4, targetY: 0 }
-      : { polar: 47 * DEG, azim: 0, dist: 14.8, targetY: 0.18 };
+    this._camGoal = camPreset(this.viewMode);
+    this._fitDist();
     this._cam = { ...this._camGoal };
     this._placeCam(1);
   }
@@ -426,11 +458,13 @@ export class Board3D {
       }
       return { maxAbsX, minY, maxY };
     };
-    // start from current goal and scale so the frame uses ~82% of width
+    // Fill more of the portrait width in top-down / 2D; leave a little more
+    // margin in the tilted view so the near edge isn't clipped.
+    const fill = this.viewMode === 'tilt' ? 0.82 : 0.90;
     let dist = g.dist;
     for (let i = 0; i < 8; i++) {
       const r = proj(dist);
-      const sx = r.maxAbsX / 0.82;
+      const sx = r.maxAbsX / fill;
       // also keep the near edge (smaller y, bottom of screen) above -0.78
       // so piece bases aren't clipped; if minY < -0.78, pull back
       const sy = r.minY < -0.78 ? (-r.minY / 0.78) : 1;
@@ -442,13 +476,27 @@ export class Board3D {
     cam.position.copy(save);
   }
 
-  sqClient(sq) {
-    const p = sqWorld(sq);
-    const v = new THREE.Vector3(p.x, 0.3, p.z);
-    this.boardG.localToWorld(v);
-    v.project(this.camera);
+  _projectClient(v) {
+    const p = v.clone().project(this.camera);
     const r = this.cv.getBoundingClientRect();
-    return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+    return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height };
+  }
+  sqClient(sq) {
+    // Project the board-surface center so it round-trips with plane picking.
+    const p = sqWorld(sq);
+    const v = new THREE.Vector3(p.x, 0.051, p.z);
+    this.boardG.localToWorld(v);
+    return this._projectClient(v);
+  }
+  /** Screen position of a standee's mid-face — where a finger actually aims. */
+  pieceClient(sq) {
+    const piece = this.pieces.get(sq);
+    if (!piece) return this.sqClient(sq);
+    const h = PIECE_H[piece.type] || 1.4;
+    const mid = new THREE.Vector3(0, (h / 2) * (piece.mesh.scale.y || 1) + 0.05, 0);
+    piece.mesh.updateWorldMatrix(true, false);
+    mid.applyMatrix4(piece.mesh.matrixWorld);
+    return this._projectClient(mid);
   }
 
   resize() {
@@ -462,7 +510,7 @@ export class Board3D {
     this.cv.style.height = h + 'px';
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    // framing is a fixed default; user can pinch/wheel/_fitDist via reset
+    if (!this._userZoom) this._fitDist();
     if (!this._ro) {
       this._ro = new ResizeObserver(() => this.resize());
       this._ro.observe(wrap);
@@ -817,24 +865,59 @@ export class Board3D {
 
   _billboard() {
     const cam = this.camera;
-    const elev = (Math.PI / 2 - this._cam.polar) / DEG; // 0 horizon, 90 top
-    const lean = smoothstep(38, 78, 90 - this._cam.polar / DEG) * 0.72; // cap so 2D stays readable
+    const polar = this._cam.polar;
+    const polarDeg = polar / DEG;
+    const lean = smoothstep(58, 10, polarDeg);
     const tmp = new THREE.Vector3();
     const look = new THREE.Vector3();
+    const flat = this.viewMode === 'flat';
+    if (!this._qDesired) {
+      this._qDesired = new THREE.Quaternion();
+      this._qParent = new THREE.Quaternion();
+      this._mBasis = new THREE.Matrix4();
+      this._off = new THREE.Vector3();
+    }
     for (const p of this.pieces.values()) {
       p.group.getWorldPosition(tmp);
-      // cylindrical target (same Y)
-      look.copy(cam.position);
-      look.y = tmp.y + 0.6;
-      if (lean > 0.02) {
-        // mix toward full lookAt
-        const full = cam.position.clone();
-        look.lerp(full, lean);
+      const h = PIECE_H[p.type] || 1.4;
+      if (flat) {
+        // Photo tokens on the squares: face-up, image upright on screen.
+        // Avoid Object3D.lookAt — it goes degenerate with an overhead camera
+        // and collapses standees into slivers.
+        // local +Z (plane normal) → world +Y; local +Y (image up) → world -Z (far).
+        this._mBasis.makeBasis(
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(0, 0, -1),
+          new THREE.Vector3(0, 1, 0)
+        );
+        this._qDesired.setFromRotationMatrix(this._mBasis);
+        p.group.getWorldQuaternion(this._qParent);
+        p.mesh.quaternion.copy(this._qParent).invert().multiply(this._qDesired);
+        const tex = p.mesh.material && p.mesh.material.map;
+        const aspect = tex && tex.image ? (tex.image.width / tex.image.height) : 0.55;
+        const s = 0.92 / Math.max(h, h * aspect);
+        p.mesh.scale.setScalar(s);
+        this._off.set(0, (h / 2 + 0.05) * s, 0).applyQuaternion(p.mesh.quaternion);
+        p.mesh.position.set(-this._off.x, 0.08 - this._off.y, -this._off.z);
+        if (p.base) p.base.visible = false;
+        if (p.shadow) p.shadow.visible = false;
+      } else {
+        p.mesh.position.set(0, 0, 0);
+        if (p.base) p.base.visible = true;
+        if (p.shadow) p.shadow.visible = true;
+        look.copy(cam.position);
+        look.y = tmp.y + 0.55;
+        if (lean > 0.01) look.lerp(cam.position, lean);
+        p.mesh.lookAt(look);
+        const pitch = lean * (Math.PI / 2 - polar);
+        const foot = h * Math.sin(Math.max(0, pitch));
+        let s = foot > 0.92 ? 0.92 / foot : 1;
+        const apparent = Math.sin(Math.max(0.08, polar + pitch * 0.35));
+        if (s === 1 && apparent < 0.42) s = Math.min(1.22, 0.42 / Math.max(0.2, apparent));
+        p.mesh.scale.setScalar(s);
       }
-      p.mesh.lookAt(look);
     }
     for (const f of this.falling) {
-      // keep falling piece's mesh facing us until it fades
       f.piece.group.getWorldPosition(tmp);
       look.copy(cam.position); look.y = tmp.y + 0.4;
       f.piece.mesh.lookAt(look);
@@ -855,26 +938,100 @@ export class Board3D {
     this.cv.addEventListener('pointerleave', (e) => { if (this._ptrs.has(e.pointerId) && e.pointerType === 'mouse') this._onUp(e); });
     this.cv.addEventListener('contextmenu', this._onCtx);
     this.cv.addEventListener('wheel', this._onWheel, { passive: false });
-    this.cv.addEventListener('lostpointercapture', this._onUp);
     this.cv.style.touchAction = 'none';
     this.cv.style.userSelect = 'none';
     this.cv.style.webkitUserSelect = 'none';
   }
 
-  _sqAt(clientX, clientY) {
+  _setRay(clientX, clientY) {
     const r = this.cv.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
     this._ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this._ray.setFromCamera(this._ndc, this.camera);
-    // intersect world y=0, then convert to board local (board yaw is π when playing black)
+    return true;
+  }
+  _sqFromLocal(loc) {
+    const f = Math.floor(loc.x / SQ + 4);
+    const rr = Math.floor(4 - loc.z / SQ);
+    if (f < 0 || f > 7 || rr < 0 || rr > 7) return null;
+    return FILES[f] + (rr + 1);
+  }
+  _planeHit(clientX, clientY) {
+    if (!this._setRay(clientX, clientY)) return null;
+    // Invisible board plane only — ignore piece meshes, the table, and the frame.
+    // Plane is world y=0; the board only yaws, so that is the board surface.
     if (!this._ray.ray.intersectPlane(this._plane, this._hit)) return null;
     const loc = this.boardG.worldToLocal(this._hit.clone());
-    let f = Math.floor(loc.x / SQ + 4);
-    let rr = Math.floor(4 - loc.z / SQ);
-    if (f < 0 || f > 7 || rr < 0 || rr > 7) {
-      return { sq: null, frame: Math.abs(loc.x) < 5.6 && Math.abs(loc.z) < 5.6, hit: this._hit.clone() };
-    }
-    return { sq: FILES[f] + (rr + 1), frame: false, hit: this._hit.clone() };
+    const sq = this._sqFromLocal(loc);
+    const frame = !sq && Math.abs(loc.x) < 5.6 && Math.abs(loc.z) < 5.6;
+    return { sq, frame, hit: this._hit.clone(), loc };
   }
+  /**
+   * Nearest standee to a screen point, measured at the mid-face — the spot
+   * a finger actually aims at. Mesh raycasts are the wrong tool: a tall
+   * front piece (the king on e1) sits in front of the pawn on e2 and would
+   * steal the hit.
+   */
+  _nearestPieceScreen(clientX, clientY) {
+    let best = null, bestD = Infinity;
+    for (const [sq, p] of this.pieces) {
+      if (p._falling) continue;
+      const c = this.pieceClient(sq);
+      const d = Math.hypot(c.x - clientX, c.y - clientY);
+      if (d < bestD) { bestD = d; best = sq; }
+    }
+    if (!best) return null;
+    const { f, r } = sqFR(best);
+    const nb = frSq(f < 7 ? f + 1 : f - 1, r);
+    const a = this.sqClient(best), b = this.sqClient(nb);
+    const sqPx = Math.hypot(a.x - b.x, a.y - b.y) || 40;
+    return { sq: best, d: bestD, sqPx };
+  }
+  /**
+   * Map a pointer to a square.
+   * Always intersects the invisible board plane (never the table or standee
+   * meshes) for the ground square. When preferPieces is set, a standee whose
+   * visual center is closer to the finger than the ground-square center
+   * wins — that's how a tap on a pawn's face, which sits "above" the square
+   * in perspective, stays on that pawn instead of a square ranks away.
+   */
+  _sqAt(clientX, clientY, { preferPieces = false } = {}) {
+    const plane = this._planeHit(clientX, clientY) || { sq: null, frame: false, hit: null };
+    if (!preferPieces) return plane;
+    const near = this._nearestPieceScreen(clientX, clientY);
+    if (!near) return plane;
+    if (plane.sq) {
+      const pc = this.sqClient(plane.sq);
+      const dPlane = Math.hypot(pc.x - clientX, pc.y - clientY);
+      // Only steal from the ground square when the finger is clearly closer
+      // to the piece's face than to the square center. A tall king on e1
+      // must not grab a tap on e2's square.
+      if (near.d < dPlane * 0.75 && near.d < near.sqPx * 0.55) {
+        return { sq: near.sq, frame: false, hit: plane.hit };
+      }
+      return plane;
+    }
+    if (near.d < near.sqPx * 0.55) {
+      return { sq: near.sq, frame: false, hit: plane.hit };
+    }
+    return plane;
+  }
+  _clientXY(e) {
+    const tracked = this._ptrs.get(e.pointerId);
+    // Touch events (if any bubble here) stash coords on changedTouches, not clientX.
+    if (e.changedTouches && e.changedTouches.length) {
+      let t = e.changedTouches[0];
+      for (const x of e.changedTouches) {
+        if (tracked && Math.hypot(x.clientX - tracked.x, x.clientY - tracked.y) < Math.hypot(t.clientX - tracked.x, t.clientY - tracked.y)) t = x;
+      }
+      return { x: t.clientX, y: t.clientY };
+    }
+    const stale = (e.type === 'lostpointercapture' || e.type === 'pointercancel' || e.type === 'pointerleave'
+      || (e.clientX === 0 && e.clientY === 0 && tracked));
+    if (stale && tracked) return { x: tracked.x, y: tracked.y };
+    return { x: e.clientX, y: e.clientY };
+  }
+
 
   _colorForEvent(e) {
     if (e.shiftKey) return 'red';
@@ -895,9 +1052,12 @@ export class Board3D {
   _onDown(e) {
     if (e.button === 1) return;
     try { this.cv.setPointerCapture(e.pointerId); } catch (_) {}
-    const hit = this._sqAt(e.clientX, e.clientY) || {};
+    const { x, y } = this._clientXY(e);
+    // Prefer the piece under the finger so a drag starts on the square the
+    // standee actually occupies, not the plane-hit several ranks behind it.
+    const hit = this._sqAt(x, y, { preferPieces: true }) || {};
     const sq = hit.sq || null;
-    this._ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, sq, t: performance.now(), button: e.button, _sx: e.clientX, _sy: e.clientY });
+    this._ptrs.set(e.pointerId, { x, y, sq, t: performance.now(), button: e.button, _sx: x, _sy: y });
 
     // two-finger annotation
     if (this._ptrs.size >= 2 && e.button !== 2) {
@@ -940,16 +1100,17 @@ export class Board3D {
       return;
     }
 
-    // start possible orbit if we missed the squares (on the frame / table)
-    if (!sq) {
-      this._orbit = { x: e.clientX, y: e.clientY, azim: this._camGoal.azim, polar: this._camGoal.polar, pid: e.pointerId };
+    // Orbit is only allowed in the tilted cinematic view, and only when the
+    // press starts off the squares — never starts an arrow.
+    if (!sq && this.viewMode === 'tilt' && !this.drawMode) {
+      this._orbit = { x, y, azim: this._camGoal.azim, polar: this._camGoal.polar, pid: e.pointerId, armed: false };
     }
 
     // long-press annotation
     this._lpFired = false;
     this._cancelLP();
     const startSq = sq;
-    const startX = e.clientX, startY = e.clientY, pid = e.pointerId;
+    const startX = x, startY = y, pid = e.pointerId;
     this._lp = setTimeout(() => {
       this._lp = 0;
       const p = this._ptrs.get(pid);
@@ -990,11 +1151,14 @@ export class Board3D {
   _onMove(e) {
     const p = this._ptrs.get(e.pointerId);
     if (!p) return;
-    p.x = e.clientX; p.y = e.clientY;
-    const hit = this._sqAt(e.clientX, e.clientY) || {};
+    const { x, y } = this._clientXY(e);
+    p.x = x; p.y = y;
+    // End squares use the board plane only — the destination is a square,
+    // and we must not let a tall standee steal a far empty square.
+    const hit = this._sqAt(x, y, { preferPieces: false }) || {};
     const sq = hit.sq || null;
-    p.sq = sq ?? p.sq;
-    const movedPx = Math.hypot(e.clientX - (this._pieceSess ? this._pieceSess.x : (p._sx ?? p.x)), e.clientY - (this._pieceSess ? this._pieceSess.y : (p._sy ?? p.y)));
+    p.sq = sq; // may be null when the finger leaves the board
+    const movedPx = Math.hypot(x - (this._pieceSess ? this._pieceSess.x : (p._sx ?? p.x)), y - (this._pieceSess ? this._pieceSess.y : (p._sy ?? p.y)));
     if (movedPx > 12) this._cancelLP();
 
     if (this._annoSess && this._annoSess.two && this._ptrs.size >= 2) {
@@ -1013,11 +1177,14 @@ export class Board3D {
     }
 
     if (this._orbit && this._orbit.pid === e.pointerId && !this._pieceSess && !this._annoSess) {
-      const dx = e.clientX - this._orbit.x;
-      const dy = e.clientY - this._orbit.y;
+      const dx = x - this._orbit.x;
+      const dy = y - this._orbit.y;
+      if (!this._orbit.armed) {
+        if (Math.hypot(dx, dy) < 14) return;
+        this._orbit.armed = true;
+      }
       this._camGoal.azim = this._orbit.azim - dx * 0.005;
-      this._camGoal.polar = Math.max(10 * DEG, Math.min(72 * DEG, this._orbit.polar - dy * 0.0045));
-      if (this.topDown) this.topDown = false; // leave 2D mode if user tilts
+      this._camGoal.polar = Math.max(12 * DEG, Math.min(72 * DEG, this._orbit.polar - dy * 0.0045));
       return;
     }
 
@@ -1027,7 +1194,6 @@ export class Board3D {
         const from = this._pieceSess.from;
         const piece = this.pieces.get(from);
         if (piece && hit.hit) {
-          // drag ghost: follow pointer on the plane
           const loc = this.boardG.worldToLocal(hit.hit.clone());
           piece.group.position.set(loc.x, 0.22, loc.z);
           this.ghost = { sq: from };
@@ -1039,12 +1205,22 @@ export class Board3D {
   _onUp(e) {
     if (!this._ptrs.has(e.pointerId)) return;
     const p = this._ptrs.get(e.pointerId);
+    const { x, y } = this._clientXY(e);
     this._ptrs.delete(e.pointerId);
     this._cancelLP();
-    const hit = this._sqAt(e.clientX, e.clientY) || {};
-    const sq = hit.sq || p.sq;
+    const movedPx = Math.hypot(x - (p._sx ?? p.x), y - (p._sy ?? p.y));
+    // Destination: plane only. Do not fall back to a stale start square —
+    // that was drawing arrows "across the board" when the release was off-board
+    // or the event coords were stale.
+    const hit = this._sqAt(x, y, { preferPieces: false }) || {};
+    const sq = hit.sq || null;
 
-    if (this._orbit && this._orbit.pid === e.pointerId) this._orbit = null;
+    if (this._orbit && this._orbit.pid === e.pointerId) {
+      this._orbit = null;
+      // A frame-drag is never an arrow, even if it wandered onto the board.
+      try { this.cv.releasePointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
 
     if (this._annoSess && this._annoSess.two && this._ptrs.size > 0) {
       if (sq) this._annoSess._to = sq;
@@ -1056,8 +1232,12 @@ export class Board3D {
       const col = this._annoSess.color;
       this._annoSess = null;
       this.preview = null;
-      if (from && to && from !== to) this._toggleArrow(from, to, col);
-      else if (from) this._toggleMark(from, col);
+      // A tap (no meaningful drag) is a highlight, even if perspective
+      // makes the plane-hit at pointer-up land on a neighbor square.
+      // A drag that leaves the board creates nothing.
+      if (from && to && from !== to && movedPx >= 16) this._toggleArrow(from, to, col);
+      else if (from && movedPx < 16) this._toggleMark(from, col);
+      // else: dragged off the board — drop the preview, create nothing
       try { this.cv.releasePointerCapture(e.pointerId); } catch (_) {}
       this._syncArrows();
       this._syncHighlights();
@@ -1069,20 +1249,29 @@ export class Board3D {
       const sess = this._pieceSess;
       this._pieceSess = null;
       this.ghost = null;
-      // snap dragged piece back if we don't commit
       const mover = this.pieces.get(sess.from);
       if (mover && !mover._moving) this._placeGroup(mover.group, sess.from, true);
-      const dest = sq;
-      if (dest && this.legal[sess.from] && this.legal[sess.from].includes(dest)) {
+      // For a capture, the destination piece's face is a valid drop target.
+      const destPiece = this._sqAt(x, y, { preferPieces: true }) || {};
+      const dest = (destPiece.sq && this.legal[sess.from] && this.legal[sess.from].includes(destPiece.sq))
+        ? destPiece.sq
+        : sq;
+      const legalDest = dest && this.legal[sess.from] && this.legal[sess.from].includes(dest);
+      // A tap on a piece face can plane-hit a neighbor (e.g. e2 → e3). That
+      // is a tap to select, not a one-square move. Only a real drag, or a
+      // second tap on a legal destination, commits.
+      if (legalDest && (sess.moved || movedPx >= 16)) {
         this._commitMove(sess.from, dest);
-      } else if (!sess.moved && dest === sess.from) {
-        // keep sel
+      } else if (legalDest && sess.pendingMoveTo && dest === sess.pendingMoveTo) {
+        this._commitMove(sess.from, dest);
+      } else if (!sess.moved && (dest === sess.from || movedPx < 16 || !dest)) {
+        this.sel = sess.from;
       } else if (!sess.moved && dest && this.legal[dest] && this.canMoveFrom(dest, this._board()[dest])) {
         this.sel = dest;
       } else if (!sess.moved) {
-        if (sess.pendingMoveTo && dest === sess.pendingMoveTo) this._commitMove(sess.from, dest);
-        else { this.sel = null; }
+        this.sel = null;
       }
+      // dragged to an illegal / off-board square: keep selection
       this._syncLegal();
       this._syncHighlights();
     }

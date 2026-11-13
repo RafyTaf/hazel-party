@@ -45,7 +45,8 @@
           <li>Two-finger drag also draws an arrow.</li>
           <li>On a computer: <b>right-click drag</b>, just like chess.com. Shift = red, Alt = blue, Ctrl = orange.</li>
           <li>Arrows are private — your opponent never sees them.</li>
-          <li>Drag around the board’s frame to tilt the 3D camera, or tap <b>2D</b> for a top-down view.</li>
+          <li>The board opens in a top-down 3D view. Use the <b>Top / 3D / 2D</b> buttons on the board to switch to a tilted cinematic view or a flat 2D look.</li>
+          <li>In the tilted 3D view, drag the board’s frame to orbit the camera.</li>
         </ul>
       </details>
       <a class="back-party" href="../">← Back to Hazel Party</a>
@@ -228,6 +229,11 @@
 
     <div id="board-wrap">
       <canvas id="board"></canvas>
+      <div id="cam-switch" class="cam-switch" role="radiogroup" aria-label="Board view">
+        <button type="button" data-view="top" class="sel" title="Top-down 3D view" aria-pressed="true">Top</button>
+        <button type="button" data-view="tilt" title="Tilted cinematic 3D view" aria-pressed="false">3D</button>
+        <button type="button" data-view="flat" title="Flat 2D view" aria-pressed="false">2D</button>
+      </div>
       <div id="promo" class="hidden"></div>
     </div>
 
@@ -256,7 +262,6 @@
       <button class="act red" id="b-resign">🏳️ Resign</button>
       <button class="act" id="b-drawoffer">½ Draw</button>
       <button class="act" id="b-flip">⇅ Flip</button>
-      <button class="act" id="b-cam" title="Toggle top-down view" aria-pressed="false">2D</button>
       <button class="act" id="b-pgn">PGN</button>
       <button class="act hidden" id="b-abort">Abort</button>
       <button class="act hidden" id="b-takeback">Takeback</button>
